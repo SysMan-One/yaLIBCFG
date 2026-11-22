@@ -29,7 +29,7 @@
 **		the program takes its comments with it.
 **
 **		@include is taken where a setting may stand; the file it names must hold whole
-**		settings.  (libconfig splices an included file in as raw text, so a file holding
+**		settings, and a file may be included only once in a tree.  (libconfig splices an included file in as raw text, so a file holding
 **		half a group works there; it does not here.)  The settings of an included file
 **		become children of the group the directive stands in, with the number of their
 **		own source, so that the writer puts them back into their own file.
@@ -455,6 +455,14 @@ const	char	*l_slash;
 		if ( l_isrc->real && l_up->src->real && !strcmp(l_isrc->real, l_up->src->real) )
 			return	cfg$$error(a_p->tree, CFG$_INCLOOP, a_p->src->no, l_line, l_col, l_name, l_len);
 
+	/*
+	** The same file twice: its settings would stand in two places, and a write-back of the
+	** two could not both go into the one file - refused.
+	*/
+	for ( uint32_t i = 0; i + 1 < a_p->tree->nsrc; i++ )
+		if ( l_isrc->real && a_p->tree->src[i]->real && !strcmp(l_isrc->real, a_p->tree->src[i]->real) )
+			return	cfg$$error(a_p->tree, CFG$_INCTWICE, a_p->src->no, l_line, l_col, l_name, l_len);
+
 	l_node->incsrc = l_isrc->no;
 
 	memset(&l_inc, 0, sizeof(l_inc));
@@ -837,10 +845,16 @@ unsigned	l_sts;
 		return	l_sts;
 
 	if ( !(1 & (l_sts = s_load(*a_tree, a_path, 0, &l_src))) )
+		{
+		(*a_tree)->broken = 1;
 		return	l_sts;
+		}
 
 	if ( !(1 & (l_sts = s_parse_main(*a_tree))) )
+		{
+		(*a_tree)->broken = 1;
 		return	l_sts;
+		}
 
 	return	CFG$_NORMAL;
 }
@@ -904,7 +918,10 @@ unsigned	l_sts;
 	(*a_tree)->src[(*a_tree)->nsrc++] = l_src;
 
 	if ( !(1 & (l_sts = s_parse_main(*a_tree))) )
+		{
+		(*a_tree)->broken = 1;
 		return	l_sts;
+		}
 
 	return	CFG$_NORMAL;
 }

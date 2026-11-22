@@ -133,6 +133,7 @@ typedef	struct cfg_err_t {
 
 struct cfg_tree_t {
 	uint32_t	opts;
+	int		broken;				/* the parse failed: the tree is for CFG$PUTERRS only */
 	CFG$ARENA	*arena;
 	CFG$NODE	*root;
 	uint32_t	nsrc;

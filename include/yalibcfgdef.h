@@ -64,6 +64,8 @@ enum	{
 	CFG$K_MSG_BADARG,			/* Bad argument					*/
 	CFG$K_MSG_NOMEM,			/* Memory allocation failure			*/
 	CFG$K_MSG_TOOBIG,			/* A file or a value is too big			*/
+	CFG$K_MSG_INCTWICE,			/* A file is included twice			*/
+	CFG$K_MSG_BROKEN,			/* The tree comes from a failed parse		*/
 	CFG$K_MSG_MAX				/* End-Of-List					*/
 	};
 
@@ -88,6 +90,8 @@ enum	{
 #define	CFG$_BADARG	$CFGSTS(CFG$K_MSG_BADARG,	STS$K_ERROR)
 #define	CFG$_NOMEM	$CFGSTS(CFG$K_MSG_NOMEM,	STS$K_FATAL)
 #define	CFG$_TOOBIG	$CFGSTS(CFG$K_MSG_TOOBIG,	STS$K_ERROR)
+#define	CFG$_INCTWICE	$CFGSTS(CFG$K_MSG_INCTWICE,	STS$K_ERROR)
+#define	CFG$_BROKEN	$CFGSTS(CFG$K_MSG_BROKEN,	STS$K_ERROR)
 
 /*
 **  Node types

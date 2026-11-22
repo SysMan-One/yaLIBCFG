@@ -21,9 +21,10 @@ set(YALIBCFG_K_FILES
 	${YALIBCFG_K_CORPUS}/blank.cfg
 	${YALIBCFG_K_CORPUS}/main.cfg)
 
-add_test(NAME roundtrip COMMAND t_roundtrip ${YALIBCFG_K_FILES} ${YALIBCFG_K_CORPUS}/ext.cfg)
+add_test(NAME roundtrip COMMAND t_roundtrip ${YALIBCFG_K_FILES} ${YALIBCFG_K_CORPUS}/ext.cfg ${YALIBCFG_K_CORPUS}/inlist.cfg)
 add_test(NAME edit COMMAND t_edit)
 target_include_directories(t_errors PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(t_errors PRIVATE CORPUS="${YALIBCFG_K_CORPUS}")
 add_test(NAME errors COMMAND t_errors)
 add_test(NAME diff COMMAND t_diff)
 

@@ -66,7 +66,8 @@ typedef	struct cfg_out_t {
 	unsigned	sts;				/* CFG$_NOMEM once a growth failed		*/
 	CFG$TREE	*tree;
 	char		unit[16];			/* one step of indentation of the source	*/
-	int		flat;				/* everything on one line (CFG$TEXT_FLAT)	*/
+	int		flat;				/* everything on one line (CFG$$TEXT_FLAT)	*/
+	const	char	*nl;				/* line end of the source: "\n" or "\r\n"	*/
 } CFG$OUT;
 
 #define	$ISLIVE(n)	( !((n)->flags & CFG$M_DELETED) )
@@ -648,14 +649,15 @@ int		l_flat, l_first = 1;
 			return;
 			}
 
-		s_puts(a_o, "{\n");
+		s_puts(a_o, "{");
+		s_puts(a_o, a_o->nl);
 
 		for ( l_c = a_n->child; l_c; l_c = l_c->next )
 			if ( $ISLIVE(l_c) )
 				{
 				s_puts(a_o, l_in);
 				s_gen_node(a_o, l_c, l_in);
-				s_puts(a_o, "\n");
+				s_puts(a_o, a_o->nl);
 				}
 
 		s_puts(a_o, a_indent);
@@ -683,7 +685,8 @@ int		l_flat, l_first = 1;
 		if ( l_flat )
 			s_puts(a_o, l_first ? " " : ", ");
 		else	{
-			s_puts(a_o, l_first ? "\n" : ",\n");
+			s_puts(a_o, l_first ? "" : ",");
+			s_puts(a_o, a_o->nl);
 			s_puts(a_o, l_in);
 			}
 
@@ -693,7 +696,7 @@ int		l_flat, l_first = 1;
 
 	if ( !l_flat )
 		{
-		s_puts(a_o, "\n");
+		s_puts(a_o, a_o->nl);
 		s_puts(a_o, a_indent);
 		}
 	else	s_puts(a_o, " ");
@@ -726,6 +729,7 @@ CFG$OUT	l_o;
 	l_o.sts = STS$K_SUCCESS;
 	l_o.tree = a_node->tree;
 	l_o.flat = 1;
+	l_o.nl = "\n";
 
 	if ( a_name )
 		s_gen_node(&l_o, a_node, "");
@@ -928,7 +932,7 @@ char	l_c = s_lastc(a_o);
 		{
 		if ( l_c != '\n' )
 			{
-			s_puts(a_o, "\n");
+			s_puts(a_o, a_o->nl);
 			l_nl = 1;
 			}
 
@@ -943,7 +947,7 @@ char	l_c = s_lastc(a_o);
 		s_puts(a_o, ",");
 
 	if ( a_ml && !l_nl )
-		s_puts(a_o, "\n");
+		s_puts(a_o, a_o->nl);
 }
 
 
@@ -994,6 +998,28 @@ int		l_ml, l_have = 0;
 				}
 
 			s_newnode(a_o, l_c, l_ml, l_indent);
+			continue;
+			}
+
+		if ( (l_c->flags & CFG$M_DELETED) && l_c->lead && (l_buf[l_c->lead - 1] != '\n') && (l_c->end > l_c->lead) && (l_buf[l_c->end - 1] == '\n') )
+			{
+			/*
+			** Removed from the end of a line it shared with the one before: the blanks
+			** before it go, the line end it took stays
+			*/
+			uint32_t	l_g = l_c->lead;
+
+			while ( (l_g > a_cur) && ((l_buf[l_g - 1] == ' ') || (l_buf[l_g - 1] == '\t')) )
+				l_g--;
+
+			s_put(a_o, l_buf + a_cur, l_g - a_cur);
+
+			/* Blanks left by a sibling removed before it on the same line go too */
+			while ( a_o->len && ((a_o->p[a_o->len - 1] == ' ') || (a_o->p[a_o->len - 1] == '\t')) )
+				a_o->p[--a_o->len] = '\0';
+
+			s_puts(a_o, ((l_c->end >= 2) && (l_buf[l_c->end - 2] == '\r')) ? "\r\n" : "\n");
+			a_cur = l_c->end;
 			continue;
 			}
 
@@ -1061,6 +1087,20 @@ const	char	*l_buf = a_src->buf;
 
 
 /*
+**  DESCRIPTION: The line end a source uses: that of its first line.
+*/
+static const char *	s_lineend	(
+		CFG$SRC		*a_src
+			)
+{
+const	char	*l_nl = memchr(a_src->buf, '\n', a_src->len);
+
+	return	(l_nl && (l_nl > a_src->buf) && (l_nl[-1] == '\r')) ? "\r\n" : "\n";
+}
+
+
+
+/*
 **  DESCRIPTION: Find the @include node that brought a source.
 */
 static CFG$NODE *	s_find_include	(
@@ -1075,7 +1115,7 @@ CFG$NODE	*l_r;
 		if ( (l_c->type == CFG$K_TYPE_INCLUDE) && (l_c->incsrc == a_srcno) )
 			return	l_c;
 
-		if ( (l_c->type == CFG$K_TYPE_GROUP) && (l_r = s_find_include(l_c, a_srcno)) )
+		if ( ((l_c->type == CFG$K_TYPE_GROUP) || (l_c->type == CFG$K_TYPE_LIST)) && (l_r = s_find_include(l_c, a_srcno)) )
 			return	l_r;
 		}
 
@@ -1110,11 +1150,16 @@ CFG$NODE	*l_cont = NULL, *l_inc;
 	if ( !a_tree || !a_buf || !a_len || (a_srcno >= a_tree->nsrc) )
 		return	CFG$_BADARG;
 
+	/* The offsets of a failed parse are not to be trusted */
+	if ( a_tree->broken )
+		return	CFG$_BROKEN;
+
 	memset(&l_o, 0, sizeof(l_o));
 	l_o.sts = STS$K_SUCCESS;
 	l_o.tree = a_tree;
 
 	s_unit(&l_o, a_tree->src[a_srcno]);
+	l_o.nl = s_lineend(a_tree->src[a_srcno]);
 
 	if ( !a_srcno )
 		l_cont = a_tree->root;

@@ -28,8 +28,10 @@
 **
 **		The FINGERPRINT of a tree is a UUID of version 5 (RFC 9562): SHA-1 over the
 **		yaLIBCFG namespace and a canonical encoding of the settings - the settings of a
-**		group in the order of their names, so the fingerprint, like the comparison, does
-**		not see comments, layout or order.  Two trees of the same settings have the same
+**		group in the order of their names, the elements of a list with a key in the
+**		order of the keys - so the fingerprint, like the comparison (without
+**		CFG$M_POSITIONAL), does not see comments, layout or the order of what the
+**		comparison matches by name or key.  Two trees of the same settings have the same
 **		fingerprint; a listing names the fingerprints of both trees, so a listing can be
 **		told whose it is.
 **
@@ -550,6 +552,9 @@ unsigned	l_sts;
 	if ( !a_old || !a_new || !a_diff )
 		return	CFG$_BADARG;
 
+	if ( a_old->broken || a_new->broken )
+		return	CFG$_BROKEN;
+
 	if ( !(l_d = calloc(1, sizeof(CFG$DIFF))) )
 		return	CFG$_NOMEM;
 
@@ -651,6 +656,67 @@ unsigned	cfg$diff_free	(
 
 
 /*
+**  DESCRIPTION: The key of one list by itself - S_LISTKEY of the list with itself.
+*/
+static const char *	s_selfkey	(
+		CFG$NODE	*a_list
+			)
+{
+	return	s_listkey(a_list, a_list);
+}
+
+
+
+/*
+**  DESCRIPTION: Order two scalars for the fingerprint: by type, then by value (strings bytewise,
+**		shorter first; numbers by their bits as unsigned).
+**
+**  RETURNS:
+**	<0, 0, >0
+*/
+static int	s_keycmp	(
+		CFG$NODE	*a_a,
+		CFG$NODE	*a_b
+			)
+{
+int		l_ta = $ISINTEGER(a_a->type) ? CFG$K_TYPE_INT : a_a->type, l_tb = $ISINTEGER(a_b->type) ? CFG$K_TYPE_INT : a_b->type, l_c;
+uint64_t	l_ua = 0, l_ub = 0;
+uint32_t	l_min;
+
+	if ( l_ta != l_tb )
+		return	l_ta - l_tb;
+
+	if ( l_ta == CFG$K_TYPE_STRING )
+		{
+		l_min = (a_a->v.s.len < a_b->v.s.len) ? a_a->v.s.len : a_b->v.s.len;
+
+		if ( (l_c = memcmp(a_a->v.s.ptr, a_b->v.s.ptr, l_min)) )
+			return	l_c;
+
+		return	(a_a->v.s.len > a_b->v.s.len) - (a_a->v.s.len < a_b->v.s.len);
+		}
+
+	if ( l_ta == CFG$K_TYPE_FLOAT )
+		{
+		memcpy(&l_ua, &a_a->v.f, 8);
+		memcpy(&l_ub, &a_b->v.f, 8);
+		}
+	else if ( l_ta == CFG$K_TYPE_BOOL )
+		{
+		l_ua = !!a_a->v.b;
+		l_ub = !!a_b->v.b;
+		}
+	else	{
+		l_ua = (uint64_t) a_a->v.i;
+		l_ub = (uint64_t) a_b->v.i;
+		}
+
+	return	(l_ua > l_ub) - (l_ua < l_ub);
+}
+
+
+
+/*
 **  DESCRIPTION: The canonical encoding of a node into the hash of the fingerprint.
 */
 static unsigned	s_fp	(
@@ -660,6 +726,7 @@ static unsigned	s_fp	(
 {
 uint8_t		l_hdr[9];
 CFG$NODE	*l_c, **l_v = NULL;
+const	char	*l_key;
 uint32_t	l_cnt = 0;
 unsigned	l_sts = STS$K_SUCCESS;
 uint64_t	l_u = 0;
@@ -695,6 +762,22 @@ uint64_t	l_u = 0;
 	for ( l_c = a_n->child; l_c; l_c = l_c->next )
 		if ( $ISLIVE(l_c) && (l_cnt < a_n->count) )
 			l_v[l_cnt++] = l_c;
+
+	/*
+	** A list with a key (as CFG$DIFF matches it) in the order of the keys: the comparison
+	** does not see the order of such a list, nor must the fingerprint
+	*/
+	if ( (a_n->type == CFG$K_TYPE_LIST) && (l_key = s_selfkey(a_n)) )
+		for ( uint32_t i = 1; i < l_cnt; i++ )
+			{
+			CFG$NODE	*l_t = l_v[i], *l_tk = cfg$$find(l_t, l_key, (uint32_t) strlen(l_key));
+			uint32_t	j = i;
+
+			for ( ; j && (s_keycmp(cfg$$find(l_v[j - 1], l_key, (uint32_t) strlen(l_key)), l_tk) > 0); j-- )
+				l_v[j] = l_v[j - 1];
+
+			l_v[j] = l_t;
+			}
 
 	if ( a_n->type == CFG$K_TYPE_GROUP )
 		for ( uint32_t i = 1; i < l_cnt; i++ )
@@ -765,6 +848,9 @@ unsigned	l_sts;
 	if ( !a_tree || !a_uuid )
 		return	CFG$_BADARG;
 
+	if ( a_tree->broken )
+		return	CFG$_BROKEN;
+
 	cfg$$sha1_init(&l_ctx);
 	cfg$$sha1_update(&l_ctx, s_ns, sizeof(s_ns));
 
@@ -795,9 +881,11 @@ static void	s_head	(
 uint8_t		l_uuid[16];
 fao_prm_t	l_p[3];
 
-	l_p[0] = (fao_prm_t) a_label;
-	l_p[1] = (fao_prm_t) a_tree->src[0]->path;
-	s_fao(a_b, "!AZ !AZ!/", 2, l_p);
+	/* A file name may be as long as PATH_MAX: put as it is, not through FAO */
+	s_puts(a_b, a_label);
+	s_puts(a_b, " ");
+	s_puts(a_b, a_tree->src[0]->path);
+	s_puts(a_b, "\n");
 
 	if ( !(1 & cfg$fingerprint(a_tree, l_uuid)) )
 		memset(l_uuid, 0, sizeof(l_uuid));
@@ -830,13 +918,15 @@ static void	s_side	(
 fao_prm_t	l_p[2];
 char		*l_txt;
 uint32_t	l_len;
+unsigned	l_sts;
 const	char	*l_file = a_tree->src[0]->path;
 
 	if ( a_n && (a_n->srcno < a_tree->nsrc) )
 		l_file = a_tree->src[a_n->srcno]->path;
 
-	l_p[0] = (fao_prm_t) l_file;
-	s_fao(a_b, "File !AZ!/", 1, l_p);
+	s_puts(a_b, "File ");
+	s_puts(a_b, l_file);
+	s_puts(a_b, "\n");
 
 	if ( !a_n )
 		{
@@ -854,8 +944,11 @@ const	char	*l_file = a_tree->src[0]->path;
 	s_puts(a_b, a_path);
 	s_puts(a_b, " = ");
 
-	if ( !(1 & (a_b->sts = cfg$$text_flat(a_n, 0, &l_txt, &l_len))) )
+	if ( !(1 & (l_sts = cfg$$text_flat(a_n, 0, &l_txt, &l_len))) )
+		{
+		a_b->sts = l_sts;
 		return;
+		}
 
 	s_put(a_b, l_txt, l_len);
 	free(l_txt);
@@ -952,9 +1045,11 @@ uint32_t	l_n[4] = { 0, 0, 0, 0 };
 
 	s_puts(&l_b, (a_diff->opts & CFG$M_POSITIONAL) ? "CONFIGURATION DIFFERENCES /POSITIONAL-\n" : "CONFIGURATION DIFFERENCES /KEYS=(ID,NAME,KEY)-\n");
 
-	l_p[0] = (fao_prm_t) a_diff->old->src[0]->path;
-	l_p[1] = (fao_prm_t) a_diff->new->src[0]->path;
-	s_fao(&l_b, "    !AZ-!/    !AZ!/", 2, l_p);
+	s_puts(&l_b, "    ");
+	s_puts(&l_b, a_diff->old->src[0]->path);
+	s_puts(&l_b, "-\n    ");
+	s_puts(&l_b, a_diff->new->src[0]->path);
+	s_puts(&l_b, "\n");
 
 	if ( !(1 & l_b.sts) )
 		{

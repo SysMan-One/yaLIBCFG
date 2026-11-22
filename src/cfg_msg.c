@@ -62,7 +62,9 @@ static	EMSG_RECORD	s_msgtab [] = {
 	$CFGREC(CFG$_BADNAME,	"BADNAME, not a valid setting name"),
 	$CFGREC(CFG$_BADARG,	"BADARG, bad argument"),
 	$CFGREC(CFG$_NOMEM,	"NOMEM, memory allocation failure"),
-	$CFGREC(CFG$_TOOBIG,	"TOOBIG, !AD is too big" $CFGPOS)
+	$CFGREC(CFG$_TOOBIG,	"TOOBIG, !AD is too big" $CFGPOS),
+	$CFGREC(CFG$_INCTWICE,	"INCTWICE, file included a second time: !AD" $CFGPOS),
+	$CFGREC(CFG$_BROKEN,	"BROKEN, the tree comes from a failed parse")
 	};
 
 static	EMSG_RECORD_DESC	s_msgdsc = {
@@ -116,7 +118,8 @@ unsigned	cfg$$error	(
 {
 CFG$ERR	*l_err;
 
-	if ( a_tree->nerr >= CFG$K_MAXERRS )
+	/* No tree - a scan of a value of a path (CFG_TREE.C): nothing to record */
+	if ( !a_tree || (a_tree->nerr >= CFG$K_MAXERRS) )
 		return	a_sts;
 
 	l_err = &a_tree->err[a_tree->nerr++];

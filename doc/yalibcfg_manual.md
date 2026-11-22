@@ -20,7 +20,7 @@ you do, a lot here will look familiar.
 
 ### Document Structure
 
-This manual has two parts and three appendixes.
+This manual has two parts and four appendixes.
 
 * **Part I, Concepts and Tutorial**, tells what the library is for, how a configuration file is
   written, and how a program reads and changes one. Read it from the start.
@@ -76,7 +76,8 @@ the program writes the tree back:
 * a setting nothing touched is copied as it stood, comments and all;
 * a changed value gets new text, and its name, its `=`, its `;` and its comment stay;
 * a removed setting leaves with the comment lines that described it;
-* a new setting is put after its siblings, with their indentation.
+* a new setting is put after its siblings, with their indentation and the line end the file
+  uses (LF or CR LF).
 
 A file read and written without changes is the **same file byte for byte**. The tests of the
 kit check this on every build.
@@ -245,7 +246,9 @@ settings of the included file become settings of that group. A relative name is 
 directory of the file the directive is in.
 
 The included file must hold **whole settings**. (libconfig pastes the included file in as
-text, so half a group there works; here it does not.)
+text, so half a group there works; here it does not.) A file may be included **once** in a
+tree: if it stood in two places, a change made in one of them could not be written back
+without losing the other (CFG$_INCTWICE).
 
 When a program changes a setting that came from an included file, CFG$WRITE writes the change
 into **that** file; the `@include` line of the main file stays as it was.
@@ -326,7 +329,9 @@ Most routines take a **base node** and a **path** from it:
 | `""` or NULL | the base node itself |
 
 An element selected by `[n]` or `[key=value]` is looked for among the **live** elements:
-those removed by the program do not count.
+those removed by the program do not count. The value in `[key=value]` is written as in a
+file - `[id=0x1F]`, `[ratio=1.5]`, `[name="a\"b"]` - and a string may also go without
+quotes: `[name=mgmt]`. Every path CFG$DIFF reports can be given to CFG$LOOKUP.
 
 The path `""` is handy when you already hold the node:
 
@@ -384,8 +389,9 @@ Every difference is one of three kinds: CFG$K_DIFF_MOD (the value differs), CFG$
 in the new tree), CFG$K_DIFF_DEL (only in the old one).
 
 The **fingerprint** (CFG$FINGERPRINT) of a tree is a UUID of version 5 (RFC 9562), made by
-SHA-1 from the settings - in a canonical form that, like the comparison, does not see comments,
-layout or the order of the settings in a group. So:
+SHA-1 from the settings - in a canonical form that, like the comparison (without
+CFG$M_POSITIONAL), does not see comments, layout, the order of the settings in a group or the
+order of the elements of a list with a key. So:
 
 * two files with the same settings have the same fingerprint, whatever their comments;
 * any change of a setting changes the fingerprint;
@@ -546,8 +552,11 @@ if ( !(sts & 1) )
 %CFG-E-DUPNAME, duplicate setting mtu, router.cfg line 15 column 50
 ```
 
-A failed CFG$SET_*, CFG$ADD or CFG$DELETE records nothing in the tree - only the condition
-value says what went wrong; put it out with `$PUTMSG_FAO(sts)` if you like.
+A failed CFG$SET_*, CFG$ADD or CFG$DELETE leaves the tree as it was and records nothing in it -
+only the condition value says what went wrong; put it out with `$PUTMSG_FAO(sts)` if you like.
+
+A tree whose parse failed is good only for CFG$PUTERRS and CFG$FREE: CFG$WRITE_BUF, CFG$WRITE,
+CFG$WRITE_FILE, CFG$DIFF and CFG$FINGERPRINT refuse it with CFG$_BROKEN.
 
 ### 4.5 Comparing Two Configurations
 
@@ -727,7 +736,7 @@ The parse stops at the first error.
 | CFG$_NORMAL | Parsed. |
 | CFG$_OPENIN, CFG$_READERR | The file (or an included one) could not be read. |
 | CFG$_SYNTAX, CFG$_UNTERM, CFG$_BADNUM, CFG$_BADESC, CFG$_DUPNAME, CFG$_MIXARRAY | An error in the text, see Appendix A. |
-| CFG$_INCLUDE, CFG$_INCDEPTH, CFG$_INCLOOP | A problem with `@include`. |
+| CFG$_INCLUDE, CFG$_INCDEPTH, CFG$_INCLOOP, CFG$_INCTWICE | A problem with `@include`. |
 | CFG$_TOOBIG | A file, a name or the nesting is too big (Appendix B). |
 | CFG$_NOMEM | No memory. |
 | CFG$_BADARG | `a_path` is NULL. |
@@ -1090,6 +1099,7 @@ not change is not touched.
 |---|---|
 | STS$K_SUCCESS | Done. |
 | CFG$_WRITERR | A file could not be written; the tree records which one and the errno. |
+| CFG$_BROKEN | The tree comes from a failed parse. |
 | CFG$_NOMEM | No memory. |
 
 ---
@@ -1237,6 +1247,11 @@ Every message has the form `%CFG-s-IDENT, text`, where *s* is the severity: S - 
 I - information, W - warning, E - error, F - fatal. The messages of a parse end with the file,
 the line and the column.
 
+**BROKEN, the tree comes from a failed parse**
+*Explanation:* A write, a comparison or a fingerprint was asked of a tree whose parse failed.
+*User Action:* Put out the diagnostics of the parse (CFG$PUTERRS), correct the file, parse it
+again.
+
 **BADARG, bad argument**
 *Explanation:* A routine got a NULL pointer, a type out of range, a name where none is
 allowed. *User Action:* A program error - check the call.
@@ -1272,6 +1287,10 @@ files.
 **INCLOOP, file includes itself:** *name*
 *Explanation:* A file includes itself, directly or through others. *User Action:* Break the
 loop.
+
+**INCTWICE, file included a second time:** *name*
+*Explanation:* A file is included twice in one tree. *User Action:* Include it once; if two
+groups need the same settings, give them a list or copy the settings.
 
 **INCLUDE, cannot include** *name*
 *Explanation:* An included file could not be read; the OPENIN message before it says why.
@@ -1341,6 +1360,7 @@ The old file is left as it was. *User Action:* As the errno says.
 | Comments and layout on write | lost | kept; a file without changes is written byte for byte |
 | Decimal integer beyond 32 bits without `L` | 1.5: cut to 32 bits silently; 1.7: 64-bit | 64-bit |
 | `@include` | pastes the text in, anywhere | whole settings only, where a setting may stand |
+| The same file included twice | allowed | refused (CFG$_INCTWICE) - a change could not be written back to both places |
 | A change in an included file | written into the main file on save | written into the included file |
 | Errors | one, text and line | condition values with file, line and column |
 | Writing | in place | a temporary file and a rename - never half a file |
@@ -1365,7 +1385,7 @@ every version of yaLIBCFG. It is defined here so that it can be computed by othe
    | boolean | `'B'`, 8 octets: 1 or 0 |
    | string | `'S'`, the length as 8 octets, the octets of the string (escapes resolved) |
    | group | `'G'`, the count as 8 octets, then for every setting in the order of the names (bytewise; for a tree parsed with CFG$M_NOCASE - of the names in lower case): one octet of the name length, the name, the setting |
-   | list | `'L'`, the count as 8 octets, the elements in their order |
+   | list | `'L'`, the count as 8 octets, the elements in their order - or, when the list has a key (every element a group holding a scalar `id`, else `name`, else `key`, unique in the list), in the order of the keys: by type (integer < float < boolean < string, as CFG$K_TYPE_*), then integers, floats and booleans by their 8 octets as unsigned, strings bytewise, a shorter one first |
    | array | `'A'`, the count as 8 octets, the elements in their order |
 
 3. Take the first 16 octets of the digest; set the high four bits of octet 6 to 5 (version) and

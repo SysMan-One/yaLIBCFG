@@ -402,6 +402,10 @@ unsigned	cfg$next	(
 /*
 **  DESCRIPTION: Does a scalar node hold the value written as text in a path ("[id=7]")?
 **
+**		The text is read by the lexer of the files, so a value is written in a path the
+**		way it is written in a file: 0xFF, 1.5, true, "a\"b" - which is also the way
+**		CFG$DIFF writes the paths it reports.  A string may also be given without quotes.
+**
 **  RETURNS:
 **	1 - it does, 0 - it does not
 */
@@ -411,37 +415,65 @@ static int	s_valeq	(
 		uint32_t	a_len
 			)
 {
-char	l_tmp[32], *l_endp;
+CFG$SRC		l_src;
+CFG$LEX		l_lex;
+char		*l_buf, *l_str = NULL;
+uint32_t	l_slen = 0, l_tok;
+int		l_eq = 0;
+
+	if ( !(l_buf = malloc((size_t) a_len + 1)) )
+		return	0;
+
+	memcpy(l_buf, a_val, a_len);
+	l_buf[a_len] = '\0';
+
+	memset(&l_src, 0, sizeof(l_src));
+	l_src.buf = l_buf;
+	l_src.len = a_len;
+
+	cfg$$lex_init(&l_lex, NULL, &l_src);
+
+	/* One scalar token and nothing after it */
+	if ( !(1 & cfg$$lex_next(&l_lex)) || ((l_tok = l_lex.tok) < CFG$K_TOK_INT) || (l_tok > CFG$K_TOK_STRING) )
+		{
+		/* A bare word: a string without quotes - compared at L_DONE */
+		goto	l_done;
+		}
+
+	if ( l_tok == CFG$K_TOK_STRING )
+		{
+		while ( l_lex.tok == CFG$K_TOK_STRING )
+			if ( !(1 & cfg$$lex_next(&l_lex)) )
+				goto	l_done;
+
+		if ( !(l_str = malloc((size_t) a_len + 1)) || !(1 & cfg$$lex_string(&l_lex, 0, l_lex.tbeg, l_str, &l_slen)) )
+			goto	l_done;
+		}
+	else if ( !(1 & cfg$$lex_next(&l_lex)) )
+		goto	l_done;
+
+	if ( l_lex.tok != CFG$K_TOK_EOF )
+		goto	l_done;
 
 	switch ( a_node->type )
 		{
-		case CFG$K_TYPE_STRING:
-			if ( (a_len >= 2) && (a_val[0] == '"') && (a_val[a_len - 1] == '"') )
-				a_val++, a_len -= 2;
-
-			return	(a_node->v.s.len == a_len) && !memcmp(a_node->v.s.ptr, a_val, a_len);
-
 		case CFG$K_TYPE_INT:
-		case CFG$K_TYPE_INT64:
-			if ( !a_len || (a_len >= sizeof(l_tmp)) )
-				return	0;
-
-			memcpy(l_tmp, a_val, a_len);
-			l_tmp[a_len] = '\0';
-
-			return	(strtoll(l_tmp, &l_endp, 0) == a_node->v.i) && (*l_endp == '\0');
-
-		case CFG$K_TYPE_BOOL:
-			if ( (a_len == 4) && !strncasecmp(a_val, "true", 4) )
-				return	a_node->v.b;
-
-			if ( (a_len == 5) && !strncasecmp(a_val, "false", 5) )
-				return	!a_node->v.b;
-
-			return	0;
+		case CFG$K_TYPE_INT64:	l_eq = ((l_tok == CFG$K_TOK_INT) || (l_tok == CFG$K_TOK_INT64)) && (l_lex.ival == a_node->v.i);	break;
+		case CFG$K_TYPE_FLOAT:	l_eq = (l_tok == CFG$K_TOK_FLOAT) && (l_lex.fval == a_node->v.f);	break;
+		case CFG$K_TYPE_BOOL:	l_eq = (l_tok == CFG$K_TOK_BOOL) && (!l_lex.ival == !a_node->v.b);	break;
+		case CFG$K_TYPE_STRING:	l_eq = (l_tok == CFG$K_TOK_STRING) && (l_slen == a_node->v.s.len) && !memcmp(l_str, a_node->v.s.ptr, l_slen); break;
 		}
 
-	return	0;
+l_done:
+	/* A string written without quotes that looks like something else: "[name=123]" */
+	if ( !l_eq && (a_node->type == CFG$K_TYPE_STRING) )
+		l_eq = (a_node->v.s.len == a_len) && !memcmp(a_node->v.s.ptr, a_val, a_len);
+
+	free(l_str);
+	free(l_src.comm);
+	free(l_buf);
+
+	return	l_eq;
 }
 
 
@@ -538,8 +570,14 @@ uint32_t	l_len = 0;
 
 	if ( a_path[0] == '[' )
 		{
-		while ( a_path[l_len] && (a_path[l_len] != ']') )
-			l_len++;
+		/* Up to the ']' that is not inside a quoted string */
+		for ( int l_q = 0; a_path[l_len] && (l_q || (a_path[l_len] != ']')); l_len++ )
+			{
+			if ( l_q && (a_path[l_len] == '\\') && a_path[l_len + 1] )
+				l_len++;
+			else if ( a_path[l_len] == '"' )
+				l_q = !l_q;
+			}
 
 		return	a_path[l_len] ? l_len + 1 : l_len;
 		}
@@ -798,10 +836,12 @@ static unsigned	s_target	(
 CFG$NODE	*l_n = a_base, *l_next;
 uint32_t	l_len;
 unsigned	l_sts;
+const	char	*l_p;
 
 	if ( !a_base || !a_path )
 		return	CFG$_BADARG;
 
+	/* As far as the path leads */
 	while ( *a_path )
 		{
 		if ( (*a_path == '.') || (*a_path == '/') )
@@ -813,20 +853,8 @@ unsigned	l_sts;
 		if ( !(l_len = s_complen(a_path)) )
 			return	CFG$_BADPATH;
 
-		l_sts = s_step(l_n, a_path, l_len, &l_next);
-
-		if ( (l_sts == CFG$_NOTFOUND) && (a_path[0] != '[') && (l_n->type == CFG$K_TYPE_GROUP) )
-			{
-			int	l_last = !a_path[l_len];
-
-			if ( !cfg$$isname(a_path, l_len) )
-				return	CFG$_BADNAME;
-
-			if ( cfg$$find(l_n, a_path, l_len) )
-				return	CFG$_EXISTS;
-
-			l_sts = s_newnode(l_n, a_path, l_len, l_last ? a_type : CFG$K_TYPE_GROUP, &l_next);
-			}
+		if ( (l_sts = s_step(l_n, a_path, l_len, &l_next)) == CFG$_NOTFOUND )
+			break;
 
 		if ( !(1 & l_sts) )
 			return	l_sts;
@@ -835,11 +863,53 @@ unsigned	l_sts;
 		a_path += l_len;
 		}
 
-	if ( (l_n->type != a_type) && !($ISINTEGER(l_n->type) && $ISINTEGER(a_type)) )
-		return	CFG$_TYPE;
+	if ( *a_path )
+		{
+		/*
+		** The rest is to be made.  Check all of it first - a SET that fails leaves the
+		** tree as it was: settings only (no elements), valid names, inside a group.
+		*/
+		if ( l_n->type != CFG$K_TYPE_GROUP )
+			return	CFG$_NOTFOUND;
 
-	/* An element of an array keeps the type of the array */
-	if ( (l_n->parent && (l_n->parent->type == CFG$K_TYPE_ARRAY)) && (l_n->type != a_type) && !$ISINTEGER(a_type) )
+		for ( l_p = a_path; *l_p; l_p += l_len )
+			{
+			if ( (*l_p == '.') || (*l_p == '/') )
+				{
+				l_len = 1;
+				continue;
+				}
+
+			if ( !(l_len = s_complen(l_p)) )
+				return	CFG$_BADPATH;
+
+			if ( *l_p == '[' )
+				return	CFG$_NOTFOUND;		/* an element is never made		*/
+
+			if ( !cfg$$isname(l_p, l_len) )
+				return	CFG$_BADNAME;
+			}
+
+		/* Now make them: groups on the way, the last of the type */
+		while ( *a_path )
+			{
+			if ( (*a_path == '.') || (*a_path == '/') )
+				{
+				a_path++;
+				continue;
+				}
+
+			l_len = s_complen(a_path);
+
+			if ( !(1 & (l_sts = s_newnode(l_n, a_path, l_len, a_path[l_len] ? CFG$K_TYPE_GROUP : a_type, &l_next))) )
+				return	l_sts;
+
+			l_n = l_next;
+			a_path += l_len;
+			}
+		}
+
+	if ( (l_n->type != a_type) && !($ISINTEGER(l_n->type) && $ISINTEGER(a_type)) )
 		return	CFG$_TYPE;
 
 	*a_node = l_n;

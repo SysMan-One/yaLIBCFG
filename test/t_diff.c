@@ -68,6 +68,7 @@ static void	same_fp (const char *a, uint32_t oa, const char *b, uint32_t ob, int
 	cfg$free(y);
 }
 
+#define	OK(x)			CHECK((x) & 1, "%s failed", #x)
 #define	OPS(a, b, opts, want)	do { char *s = ops(a, b, opts); CHECK(!strcmp(s, want), "\n--- want\n%s--- got\n%s---", want, s); free(s); } while (0)
 #define	FP(a, oa, b, ob, want)	same_fp(a, oa, b, ob, want, __LINE__)
 
@@ -107,7 +108,53 @@ int	main (void)
 	/* A group becomes a list */
 	OPS("x = { a = 1; };", "x = ( 1 );", 0, "MOD x\n");
 
+	/* Every path a comparison reports leads somewhere with CFG$LOOKUP */
+	{
+		const char	*o = "l = ( { name = \"a\\\"b\"; v = 1; }, { name = \"x]y\"; v = 1; } );\n"
+				     "h = ( { id = 0xFFFFFFFF; v = 1; } );\nf = ( { id = 1.5; v = 1; } );\n";
+		const char	*n = "l = ( { name = \"a\\\"b\"; v = 2; }, { name = \"x]y\"; v = 2; } );\n"
+				     "h = ( { id = 0xFFFFFFFF; v = 2; } );\nf = ( { id = 1.5; v = 2; } );\n";
+		CFG$TREE	*x = p(o, 0), *y = p(n, 0);
+		CFG$NODE	*rx, *ry, *nx;
+		CFG$DIFF	*d;
+		uint32_t	cnt = 0;
+		const char	*path;
+
+		cfg$root(x, &rx); cfg$root(y, &ry);
+		OK(cfg$diff(x, y, 0, &d));
+		cfg$diff_count(d, &cnt);
+		CHECK(cnt == 4, "4 differences, got %u", cnt);
+
+		for ( uint32_t i = 0; i < cnt; i++ )
+			{
+			cfg$diff_entry(d, i, NULL, &path, NULL, NULL);
+			CHECK(cfg$lookup(ry, path, &nx) & 1, "path %s not found in the new tree", path);
+			CHECK(cfg$lookup(rx, path, &nx) & 1, "path %s not found in the old tree", path);
+			}
+
+		cfg$diff_free(d); cfg$free(x); cfg$free(y);
+	}
+
+	/* A listing of files with very long names */
+	{
+		static char	name[1200];
+		CFG$TREE	*x, *y;
+		CFG$DIFF	*d;
+		char		*txt;
+		uint32_t	len;
+
+		memset(name, 'n', sizeof(name) - 1);
+		cfg$parse_buf("a = 1;", 6, name, 0, &x);
+		cfg$parse_buf("a = 2;", 6, name, 0, &y);
+		OK(cfg$diff(x, y, 0, &d));
+		OK(cfg$diff_listing(d, CFG$M_NOTIME, &txt, &len));
+		CHECK(strstr(txt, name) != NULL, "long name not in the listing");
+		free(txt); cfg$diff_free(d); cfg$free(x); cfg$free(y);
+	}
+
 	/* The fingerprint */
+	FP("l = ( { id = 1; a = 1; }, { id = 2; a = 2; } );", 0, "l = ( { id = 2; a = 2; }, { id = 1; a = 1; } );", 0, 1);
+	FP("l = ( { a = 1; }, { a = 2; } );", 0, "l = ( { a = 2; }, { a = 1; } );", 0, 0);
 	FP("a = 1; b = 2;", 0, "b = 2;\n# note\na = 1;", 0, 1);
 	FP("a = 1;", 0, "a = 1L;", 0, 1);
 	FP("a = 1;", 0, "a = 2;", 0, 0);

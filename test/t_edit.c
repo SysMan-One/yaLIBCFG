@@ -239,6 +239,38 @@ int	main (int argc, char **argv)
 	EXPECT(t, "b = 2;\na = 5;\n");
 	cfg$free(t);
 
+	/* A failed SET leaves the tree as it was */
+	t = p("a = 1;\n", 0); cfg$root(t, &r);
+	CHECK(cfg$set_int(r, "x.y.[0]", 1) == CFG$_NOTFOUND, "an element on the way");
+	CHECK(cfg$set_int(r, "p.q.bad!", 1) == CFG$_BADNAME, "a bad name at the end");
+	CHECK(cfg$set_int(r, "a.b", 1) == CFG$_NOTFOUND, "a scalar on the way");
+	EXPECT(t, "a = 1;\n");
+	cfg$free(t);
+
+	/* CRLF: new lines get CRLF too */
+	t = p("a = 1;\r\nb = 2;\r\n", 0); cfg$root(t, &r);
+	OK(cfg$set_int(r, "c", 3)); OK(cfg$set_int(r, "g.x", 4));
+	EXPECT(t, "a = 1;\r\nb = 2;\r\nc = 3;\r\ng = {\r\n\tx = 4;\r\n};\r\n");
+	cfg$free(t);
+
+	/* Removed from a line it shared: the line end stays */
+	t = p("a=1; b=2;\nc=3;\n", 0); cfg$root(t, &r);
+	OK(cfg$lookup(r, "b", &n)); OK(cfg$delete(n));
+	EXPECT(t, "a=1;\nc=3;\n");
+	cfg$free(t);
+
+	/* Two removed from the end of a shared line */
+	t = p("a=1; b=2; c=3;\nd=4;\n", 0); cfg$root(t, &r);
+	OK(cfg$lookup(r, "b", &n)); OK(cfg$delete(n)); OK(cfg$lookup(r, "c", &n)); OK(cfg$delete(n));
+	EXPECT(t, "a=1;\nd=4;\n");
+	cfg$free(t);
+
+	/* A string key without quotes that looks like a number or a boolean */
+	t = p("l = ( { name = \"123\"; v = 1; }, { name = \"true\"; v = 2; } );\n", 0); cfg$root(t, &r);
+	OK(cfg$get_int(r, "l.[name=123].v", &i32)); CHECK(i32 == 1, "v %d", i32);
+	OK(cfg$get_int(r, "l.[name=true].v", &i32)); CHECK(i32 == 2, "v %d", i32);
+	cfg$free(t);
+
 	/* Refusals */
 	t = p("a = 1;\ng = { };\n", 0); cfg$root(t, &r);
 	CHECK(cfg$add(r, "a", CFG$K_TYPE_INT, NULL) == CFG$_EXISTS, "duplicate add");

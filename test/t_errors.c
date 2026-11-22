@@ -65,5 +65,30 @@ int	main (void)
 	BAD("a = 1e-400;",			0, CFG$_NORMAL,		0, 0);
 	BAD("a = 1e400;",			0, CFG$_BADNUM,		1, 5);
 
+	/* A tree of a failed parse is for CFG$PUTERRS only */
+	{
+		CFG$TREE	*t;
+		char		*out;
+		uint32_t	len;
+		uint8_t		u[16];
+		CFG$DIFF	*d;
+
+		cfg$parse_buf("a = 1;\nb = ", 11, "<test>", 0, &t);
+		CHECK(cfg$write_buf(t, 0, &out, &len) == CFG$_BROKEN, "write of a broken tree");
+		CHECK(cfg$write(t) == CFG$_BROKEN, "write back of a broken tree");
+		CHECK(cfg$fingerprint(t, u) == CFG$_BROKEN, "fingerprint of a broken tree");
+		CHECK(cfg$diff(t, t, 0, &d) == CFG$_BROKEN, "diff of a broken tree");
+		cfg$free(t);
+	}
+
+	/* The same file included twice */
+	{
+		CFG$TREE	*t;
+		unsigned	sts = cfg$parse_file(CORPUS "/twice.cfg", 0, &t);
+
+		CHECK(sts == CFG$_INCTWICE, "included twice: %08X", sts);
+		cfg$free(t);
+	}
+
 	return t_report("t_errors");
 }
