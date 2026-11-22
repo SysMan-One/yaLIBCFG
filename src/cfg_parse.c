@@ -318,6 +318,7 @@ char		l_real[PATH_MAX];
 	l_src->len = l_got;
 	l_src->buf[l_got] = '\0';
 	l_src->depth = (uint16_t) a_depth;
+	l_src->mtime = (int64_t) l_st.st_mtime;
 	l_src->real = realpath(a_path, l_real) ? strdup(l_real) : NULL;
 	l_src->no = (uint16_t) a_tree->nsrc;
 	a_tree->src[a_tree->nsrc++] = l_src;

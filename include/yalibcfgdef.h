@@ -112,6 +112,18 @@ enum	{
 #define	CFG$M_NOINCLUDE		2		/* @include is refused				*/
 
 /*
+**  Comparison (CFG$DIFF): the kinds of a difference, the options
+*/
+enum	{
+	CFG$K_DIFF_MOD		= 1,		/* the value differs				*/
+	CFG$K_DIFF_ADD,				/* in the new tree only				*/
+	CFG$K_DIFF_DEL				/* in the old tree only				*/
+	};
+
+#define	CFG$M_POSITIONAL	1		/* lists matched by position, never by key	*/
+#define	CFG$M_NOTIME		2		/* listing without times - the same text every run */
+
+/*
 **  Limits
 */
 #define	CFG$K_MAXNAME		255		/* Longest setting name (ASC)			*/

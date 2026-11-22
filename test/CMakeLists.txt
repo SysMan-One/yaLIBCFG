@@ -3,7 +3,7 @@
 #
 set(YALIBCFG_K_CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus)
 
-foreach(YALIBCFG_K_T t_roundtrip t_edit t_errors)
+foreach(YALIBCFG_K_T t_roundtrip t_edit t_errors t_diff)
 	add_executable(${YALIBCFG_K_T} ${YALIBCFG_K_T}.c)
 	target_link_libraries(${YALIBCFG_K_T} PRIVATE yalibcfg)
 	target_compile_options(${YALIBCFG_K_T} PRIVATE -Wall -Wno-unused-parameter)
@@ -25,6 +25,7 @@ add_test(NAME roundtrip COMMAND t_roundtrip ${YALIBCFG_K_FILES} ${YALIBCFG_K_COR
 add_test(NAME edit COMMAND t_edit)
 target_include_directories(t_errors PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME errors COMMAND t_errors)
+add_test(NAME diff COMMAND t_diff)
 
 #
 #	The same files through libconfig, when it is there
@@ -42,4 +43,13 @@ if(LIBCONFIG_FOUND)
 	message(STATUS "yaLIBCFG: libconfig ${LIBCONFIG_VERSION} found - the comparison test is on")
 else()
 	message(STATUS "yaLIBCFG: libconfig not found - the comparison test is off")
+endif()
+
+#
+#	The examples of the manual, on a copy of the sample file, against the expected output
+#
+if(YALIBCFG_M_EXAMPLES)
+	add_test(NAME examples COMMAND ${CMAKE_COMMAND}
+		-DEXDIR=${CMAKE_BINARY_DIR} -DSRCDIR=${CMAKE_SOURCE_DIR}/examples -DWORK=${CMAKE_CURRENT_BINARY_DIR}/ex-work
+		-P ${CMAKE_CURRENT_SOURCE_DIR}/examples.cmake)
 endif()

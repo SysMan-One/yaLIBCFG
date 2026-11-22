@@ -1,0 +1,21 @@
+# router.cfg - the sample file of the yaLIBCFG manual
+
+# Who we are
+system = {
+	hostname = "edge-1";		# shown in the prompt
+	location = "Lab, rack 4";
+	snmp = {
+		port = 161;
+	};
+};
+
+# The ports of the switch
+ports = (
+	# management
+	{ id = 1;  speed = "1G";  enabled = true; },
+
+	# uplinks
+	{ id = 9;  speed = "10G"; enabled = true;  mtu = 9216; }
+);
+
+vlans = [ 1, 100, 200 ];

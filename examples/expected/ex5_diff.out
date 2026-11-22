@@ -1,0 +1,45 @@
+CONFIGURATION DIFFERENCES
+
+Old: router.cfg
+     UUID a0f0b155-8348-5765-97a7-4dfb5164faba
+New: router-new.cfg
+     UUID 675a82eb-f1b2-5bc6-9b79-4de26c7f01c6
+
+************
+File router.cfg
+    15   ports.[id=9].mtu = 9216;
+******
+File router-new.cfg
+    11   ports.[id=9].mtu = 1500;
+************
+File router.cfg
+    16   ports.[id=10] = { id = 10; speed = "10G"; enabled = false; mtu = 9216; };
+******
+File router-new.cfg
+        (none)
+************
+File router.cfg
+        (none)
+******
+File router-new.cfg
+    12   ports.[id=11] = { id = 11; speed = "10G"; enabled = true; };
+************
+File router.cfg
+    19   vlans = [ 1, 100, 200 ];
+******
+File router-new.cfg
+    15   vlans = [ 1, 100, 200, 300 ];
+************
+File router.cfg
+        (none)
+******
+File router-new.cfg
+    16   syslog = "10.0.0.5";
+************
+
+Number of difference sections found: 5
+   changed: 2, added: 2, removed: 1
+
+CONFIGURATION DIFFERENCES /KEYS=(ID,NAME,KEY)-
+    router.cfg-
+    router-new.cfg

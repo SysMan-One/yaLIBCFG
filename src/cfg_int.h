@@ -80,6 +80,7 @@ typedef	struct cfg_src_t {
 	uint16_t	no,				/* index in the tree				*/
 			depth;				/* of @include					*/
 	char		*real;				/* realpath() - for the loop check		*/
+	int64_t		mtime;				/* time of the last change, 0 - not a file	*/
 	uint32_t	ncomm;				/* comment spans, sorted			*/
 	uint32_t	*comm;				/* pairs: begin, end				*/
 	uint32_t	commmax;
@@ -207,8 +208,23 @@ void *		cfg$$cloc	(void);
 int		cfg$$span_at	(CFG$SRC *a_src, uint32_t a_pos, uint32_t *a_beg, uint32_t *a_end);
 
 /*
-**  CFG_WRITE.C helpers used by CFG_TREE.C
+**  CFG_WRITE.C helpers used by the other modules
 */
 unsigned	cfg$$format_string(const char *a_str, uint32_t a_len, char **a_out, uint32_t *a_outlen);
+unsigned	cfg$$text_flat	(CFG$NODE *a_node, int a_name, char **a_buf, uint32_t *a_len);
+
+/*
+**  CFG_SHA1.C
+*/
+typedef	struct cfg_sha1_t {
+	uint32_t	h[5];
+	uint8_t		blk[64];
+	uint32_t	used;
+	uint64_t	total;
+} CFG$SHA1;
+
+void		cfg$$sha1_init	(CFG$SHA1 *a_ctx);
+void		cfg$$sha1_update(CFG$SHA1 *a_ctx, const void *a_data, size_t a_len);
+void		cfg$$sha1_final	(CFG$SHA1 *a_ctx, uint8_t *a_out);
 
 #endif	/* __CFG_INT$H__ */

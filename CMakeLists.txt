@@ -59,7 +59,9 @@ add_library(yalibcfg STATIC
 	src/cfg_lex.c
 	src/cfg_parse.c
 	src/cfg_tree.c
-	src/cfg_write.c)
+	src/cfg_write.c
+	src/cfg_diff.c
+	src/cfg_sha1.c)
 
 target_include_directories(yalibcfg
 	PUBLIC	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>
@@ -70,6 +72,19 @@ target_link_libraries(yalibcfg PUBLIC StarLet::starlet Threads::Threads m)
 
 install(TARGETS yalibcfg ARCHIVE DESTINATION lib)
 install(FILES include/yalibcfg.h include/yalibcfgdef.h DESTINATION include)
+
+#
+#	The examples of the manual - built and run with the tests, so the code of the
+#	manual is code that works
+#
+option(YALIBCFG_M_EXAMPLES "Build the examples of the manual" ON)
+
+if(YALIBCFG_M_EXAMPLES)
+	foreach(YALIBCFG_K_EX ex1_read ex2_edit ex3_walk ex4_list ex5_diff)
+		add_executable(${YALIBCFG_K_EX} examples/${YALIBCFG_K_EX}.c)
+		target_link_libraries(${YALIBCFG_K_EX} PRIVATE yalibcfg)
+	endforeach()
+endif()
 
 #
 #	Tests

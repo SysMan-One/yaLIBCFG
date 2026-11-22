@@ -1,0 +1,22 @@
+system     line   4  group of 2
+  hostname   line   5  "edge-1"
+  location   line   6  "Lab, rack 3"
+ports      line  10  list of 3
+  [ ]        line  12  group of 3
+    id         line  12  1
+    speed      line  12  "1G"
+    enabled    line  12  true
+  [ ]        line  15  group of 4
+    id         line  15  9
+    speed      line  15  "10G"
+    enabled    line  15  true
+    mtu        line  15  9216
+  [ ]        line  16  group of 4
+    id         line  16  10
+    speed      line  16  "10G"
+    enabled    line  16  false
+    mtu        line  16  9216
+vlans      line  19  array of 3
+  [ ]        line  19  1
+  [ ]        line  19  100
+  [ ]        line  19  200

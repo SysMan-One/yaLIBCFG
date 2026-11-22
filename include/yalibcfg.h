@@ -49,6 +49,7 @@ extern "C" {
 
 typedef	struct cfg_tree_t	CFG$TREE;		/* opaque					*/
 typedef	struct cfg_node_t	CFG$NODE;		/* opaque					*/
+typedef	struct cfg_diff_t	CFG$DIFF;		/* opaque					*/
 
 /*
 **  What CFG$NODE_INFO tells about a node
@@ -95,6 +96,16 @@ unsigned	cfg$delete	(CFG$NODE *a_node);
 unsigned	cfg$write_buf	(CFG$TREE *a_tree, uint32_t a_srcno, char **a_buf, uint32_t *a_len);
 unsigned	cfg$write	(CFG$TREE *a_tree);
 unsigned	cfg$write_file	(CFG$TREE *a_tree, const char *a_path);
+
+/*
+**  Comparison of two trees, the fingerprint of a tree
+*/
+unsigned	cfg$fingerprint	(CFG$TREE *a_tree, uint8_t a_uuid[16]);
+unsigned	cfg$diff	(CFG$TREE *a_old, CFG$TREE *a_new, uint32_t a_opts, CFG$DIFF **a_diff);
+unsigned	cfg$diff_count	(CFG$DIFF *a_diff, uint32_t *a_count);
+unsigned	cfg$diff_entry	(CFG$DIFF *a_diff, uint32_t a_idx, uint32_t *a_op, const char **a_path, CFG$NODE **a_old, CFG$NODE **a_new);
+unsigned	cfg$diff_listing(CFG$DIFF *a_diff, uint32_t a_opts, char **a_buf, uint32_t *a_len);
+unsigned	cfg$diff_free	(CFG$DIFF *a_diff);
 
 #ifdef	__cplusplus
 }

@@ -66,6 +66,7 @@ typedef	struct cfg_out_t {
 	unsigned	sts;				/* CFG$_NOMEM once a growth failed		*/
 	CFG$TREE	*tree;
 	char		unit[16];			/* one step of indentation of the source	*/
+	int		flat;				/* everything on one line (CFG$TEXT_FLAT)	*/
 } CFG$OUT;
 
 #define	$ISLIVE(n)	( !((n)->flags & CFG$M_DELETED) )
@@ -614,7 +615,7 @@ static void	s_gen_value	(
 {
 char		l_in[CFG$K_MAXINDENT];
 CFG$NODE	*l_c;
-int		l_flat = 1, l_first = 1;
+int		l_flat, l_first = 1;
 
 	if ( $ISSCALAR(a_n->type) )
 		{
@@ -629,6 +630,21 @@ int		l_flat = 1, l_first = 1;
 		if ( !a_n->count )
 			{
 			s_puts(a_o, "{ }");
+			return;
+			}
+
+		if ( a_o->flat )
+			{
+			s_puts(a_o, "{");
+
+			for ( l_c = a_n->child; l_c; l_c = l_c->next )
+				if ( $ISLIVE(l_c) && (l_c->type != CFG$K_TYPE_INCLUDE) )
+					{
+					s_puts(a_o, " ");
+					s_gen_node(a_o, l_c, a_indent);
+					}
+
+			s_puts(a_o, " }");
 			return;
 			}
 
@@ -648,9 +664,14 @@ int		l_flat = 1, l_first = 1;
 		}
 
 	/* A list or an array: on one line when it holds only scalars */
-	for ( l_c = a_n->child; l_c; l_c = l_c->next )
+	l_flat = a_o->flat;
+
+	for ( l_c = a_n->child; l_c && !l_flat; l_c = l_c->next )
 		if ( $ISLIVE(l_c) && !$ISSCALAR(l_c->type) )
-			l_flat = 0;
+			break;
+
+	if ( !l_c )
+		l_flat = 1;
 
 	s_puts(a_o, (a_n->type == CFG$K_TYPE_ARRAY) ? "[" : "(");
 
@@ -678,6 +699,51 @@ int		l_flat = 1, l_first = 1;
 	else	s_puts(a_o, " ");
 
 	s_puts(a_o, (a_n->type == CFG$K_TYPE_ARRAY) ? "]" : ")");
+}
+
+
+
+/*
+**  DESCRIPTION: The canonical text of a node on one line - "name = value;" (A_NAME and a
+**		setting) or the value alone - whatever its origin, for listings.
+**
+**  OUTPUTS:
+**	a_buf,a_len:	the text, malloc()-ed, zero-terminated - free() it
+**
+**  RETURNS:
+**	STS$K_SUCCESS, CFG$_NOMEM
+*/
+unsigned	cfg$$text_flat	(
+		CFG$NODE	*a_node,
+		int		a_name,
+		char		**a_buf,
+		uint32_t	*a_len
+			)
+{
+CFG$OUT	l_o;
+
+	memset(&l_o, 0, sizeof(l_o));
+	l_o.sts = STS$K_SUCCESS;
+	l_o.tree = a_node->tree;
+	l_o.flat = 1;
+
+	if ( a_name )
+		s_gen_node(&l_o, a_node, "");
+	else	s_gen_value(&l_o, a_node, "");
+
+	if ( !(1 & l_o.sts) )
+		{
+		free(l_o.p);
+		return	l_o.sts;
+		}
+
+	if ( !l_o.p && !(l_o.p = calloc(1, 1)) )
+		return	CFG$_NOMEM;
+
+	*a_buf = l_o.p;
+	*a_len = l_o.len;
+
+	return	STS$K_SUCCESS;
 }
 
 
