@@ -56,3 +56,10 @@ if(YALIBCFG_M_EXAMPLES)
 		-DEXDIR=${CMAKE_BINARY_DIR} -DSRCDIR=${CMAKE_SOURCE_DIR}/examples -DWORK=${CMAKE_CURRENT_BINARY_DIR}/ex-work
 		-P ${CMAKE_CURRENT_SOURCE_DIR}/examples.cmake)
 endif()
+
+#
+#	CFGTOOL on the sample files of the examples
+#
+add_test(NAME cfgtool COMMAND ${CMAKE_COMMAND}
+	-DTOOL=$<TARGET_FILE:cfgtool> -DSRCDIR=${CMAKE_SOURCE_DIR}/examples -DWORK=${CMAKE_CURRENT_BINARY_DIR}/cfgtool-work
+	-P ${CMAKE_CURRENT_SOURCE_DIR}/cfgtool.cmake)

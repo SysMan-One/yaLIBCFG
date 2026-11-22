@@ -46,15 +46,6 @@
 
 #define	CFG$K_NOSEP		0xFFFFFFFFU		/* no separator after the element		*/
 
-/*
-**  $FAO of StarLet 1.8.0 formats into a buffer with the parameters written plain.  Built with an
-**  older StarLet, the same macro over __UTIL$FAO stands in (without the count: the control strings
-**  here are literals of the library and want what they are given).  Goes when every machine has
-**  StarLet 1.8.
-*/
-#ifndef	$FAO
-#define	$FAO(ctl, outlen, dsc, ...)	__util$fao(ctl, outlen, dsc FAO$_EACH(__VA_ARGS__))
-#endif
 #define	CFG$K_ARENA		(64U * 1024U)		/* size of an arena chunk			*/
 
 /*

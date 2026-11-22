@@ -78,7 +78,15 @@ static	EMSG_RECORD	s_msgtab [] = {
 	$CFGREC(CFG$_CHECK,	"CHECK, !AD" $CFGPOS),
 	$CFGREC(CFG$_DEPRECATED, "DEPRECATED, setting no longer in use: !AD" $CFGPOS),
 	$CFGREC(CFG$_MOREERRS,	"MOREERRS, !UL more diagnostic!%S not kept"),
-	$CFGREC(CFG$_BADSCHEMA,	"BADSCHEMA, the schema is wrong")
+	$CFGREC(CFG$_BADSCHEMA,	"BADSCHEMA, the schema is wrong"),
+	$CFGREC(CFG$_CORRECT,	"CORRECT, !AZ is correct: !UL setting!%S, UUID !%U"),
+	$CFGREC(CFG$_IDENTICAL,	"IDENTICAL, no differences between !AZ and !AZ"),
+	$CFGREC(CFG$_DIFFERENT,	"DIFFERENT, !UL difference!%S between !AZ and !AZ"),
+	$CFGREC(CFG$_NOSETTING,	"NOSETTING, no setting !AZ in !AZ"),
+	$CFGREC(CFG$_MODIFIED,	"MODIFIED, !AZ set in !AZ"),
+	$CFGREC(CFG$_DELETED,	"DELETED, !AZ deleted from !AZ"),
+	$CFGREC(CFG$_CANTSET,	"CANTSET, cannot change !AZ in !AZ"),
+	$CFGREC(CFG$_OPENOUT,	"OPENOUT, cannot create !AZ, errno=!SL")
 	};
 
 static	EMSG_RECORD_DESC	s_msgdsc = {

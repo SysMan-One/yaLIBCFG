@@ -89,6 +89,7 @@ unsigned	cfg$set_int64	(CFG$NODE *a_base, const char *a_path, int64_t a_val);
 unsigned	cfg$set_float	(CFG$NODE *a_base, const char *a_path, double a_val);
 unsigned	cfg$set_bool	(CFG$NODE *a_base, const char *a_path, int a_val);
 unsigned	cfg$set_string	(CFG$NODE *a_base, const char *a_path, const char *a_str, uint32_t a_len);
+unsigned	cfg$set_value	(CFG$NODE *a_base, const char *a_path, const char *a_text, uint32_t a_len);
 
 unsigned	cfg$add		(CFG$NODE *a_parent, const char *a_name, uint32_t a_type, CFG$NODE **a_node);
 unsigned	cfg$delete	(CFG$NODE *a_node);
@@ -96,6 +97,8 @@ unsigned	cfg$delete	(CFG$NODE *a_node);
 unsigned	cfg$write_buf	(CFG$TREE *a_tree, uint32_t a_srcno, char **a_buf, uint32_t *a_len);
 unsigned	cfg$write	(CFG$TREE *a_tree);
 unsigned	cfg$write_file	(CFG$TREE *a_tree, const char *a_path);
+unsigned	cfg$write_canonical(CFG$TREE *a_tree, char **a_buf, uint32_t *a_len);
+unsigned	cfg$node_text	(CFG$NODE *a_node, uint32_t a_opts, char **a_buf, uint32_t *a_len);
 
 /*
 **  The schema: a table of entries, one per setting of a group, ended by an entry with a NULL

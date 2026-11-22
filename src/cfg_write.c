@@ -653,7 +653,7 @@ int		l_flat, l_first = 1;
 		s_puts(a_o, a_o->nl);
 
 		for ( l_c = a_n->child; l_c; l_c = l_c->next )
-			if ( $ISLIVE(l_c) )
+			if ( $ISLIVE(l_c) && (l_c->type != CFG$K_TYPE_INCLUDE) )
 				{
 				s_puts(a_o, l_in);
 				s_gen_node(a_o, l_c, l_in);
@@ -734,6 +734,116 @@ CFG$OUT	l_o;
 	if ( a_name )
 		s_gen_node(&l_o, a_node, "");
 	else	s_gen_value(&l_o, a_node, "");
+
+	if ( !(1 & l_o.sts) )
+		{
+		free(l_o.p);
+		return	l_o.sts;
+		}
+
+	if ( !l_o.p && !(l_o.p = calloc(1, 1)) )
+		return	CFG$_NOMEM;
+
+	*a_buf = l_o.p;
+	*a_len = l_o.len;
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**  DESCRIPTION: The canonical text of a node, for a program: "name = value;" or the value alone,
+**		on one line or spread over lines with a tab of indentation.
+**
+**  INPUTS:
+**	a_node:	the node
+**	a_opts:	CFG$M_TEXT_NAME - with the name (a setting); CFG$M_TEXT_FLAT - on one line
+**
+**  OUTPUTS:
+**	a_buf,a_len:	the text, malloc()-ed, zero-terminated - free() it
+**
+**  RETURNS:
+**	STS$K_SUCCESS, CFG$_NOMEM, CFG$_BADARG
+*/
+unsigned	cfg$node_text	(
+		CFG$NODE	*a_node,
+		uint32_t	a_opts,
+		char		**a_buf,
+		uint32_t	*a_len
+			)
+{
+CFG$OUT	l_o;
+
+	if ( !a_node || !a_buf || !a_len || (a_node->type == CFG$K_TYPE_INCLUDE) || (a_node->flags & CFG$M_DELETED) )
+		return	CFG$_BADARG;
+
+	memset(&l_o, 0, sizeof(l_o));
+	l_o.sts = STS$K_SUCCESS;
+	l_o.tree = a_node->tree;
+	l_o.flat = (a_opts & CFG$M_TEXT_FLAT) != 0;
+	l_o.nl = "\n";
+	strcpy(l_o.unit, "\t");
+
+	if ( (a_opts & CFG$M_TEXT_NAME) && a_node->name )
+		s_gen_node(&l_o, a_node, "");
+	else	s_gen_value(&l_o, a_node, "");
+
+	if ( !(1 & l_o.sts) )
+		{
+		free(l_o.p);
+		return	l_o.sts;
+		}
+
+	if ( !l_o.p && !(l_o.p = calloc(1, 1)) )
+		return	CFG$_NOMEM;
+
+	*a_buf = l_o.p;
+	*a_len = l_o.len;
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**  DESCRIPTION: The whole tree in the canonical form: every setting on its own line, groups spread
+**		over lines with a tab of indentation, the settings of included files in place of
+**		the @include directives.  Comments and the layout of the files are NOT kept - this
+**		is the text of the settings alone, for a program or for a comparison of texts.
+**
+**  OUTPUTS:
+**	a_buf,a_len:	the text, malloc()-ed, zero-terminated - free() it
+**
+**  RETURNS:
+**	STS$K_SUCCESS, CFG$_BROKEN, CFG$_NOMEM, CFG$_BADARG
+*/
+unsigned	cfg$write_canonical	(
+		CFG$TREE	*a_tree,
+		char		**a_buf,
+		uint32_t	*a_len
+			)
+{
+CFG$OUT	l_o;
+
+	if ( !a_tree || !a_buf || !a_len )
+		return	CFG$_BADARG;
+
+	if ( a_tree->broken )
+		return	CFG$_BROKEN;
+
+	memset(&l_o, 0, sizeof(l_o));
+	l_o.sts = STS$K_SUCCESS;
+	l_o.tree = a_tree;
+	l_o.nl = "\n";
+	strcpy(l_o.unit, "\t");
+
+	for ( CFG$NODE *l_c = a_tree->root->child; l_c; l_c = l_c->next )
+		if ( $ISLIVE(l_c) && (l_c->type != CFG$K_TYPE_INCLUDE) )
+			{
+			s_gen_node(&l_o, l_c, "");
+			s_puts(&l_o, "\n");
+			}
 
 	if ( !(1 & l_o.sts) )
 		{

@@ -1047,6 +1047,108 @@ char		*l_copy;
 
 
 /*
+**  DESCRIPTION: Set a scalar from its text as it is written in a file - "9216", "0x1F", "1.5",
+**		"true", "\"text\"" - the type taken from the text; a text that is no scalar of the
+**		syntax is set as a string.  For a command line (CFGTOOL SET).
+**
+**  INPUTS:
+**	a_base,a_path:	as for CFG$SET_*
+**	a_text,a_len:	the text
+**
+**  RETURNS:
+**	As CFG$SET_*; CFG$_BADNUM - a number out of range
+*/
+unsigned	cfg$set_value	(
+		CFG$NODE	*a_base,
+	const	char		*a_path,
+	const	char		*a_text,
+		uint32_t	a_len
+			)
+{
+CFG$SRC		l_src;
+CFG$LEX		l_lex;
+char		*l_buf, *l_str = NULL;
+uint32_t	l_slen = 0, l_tok;
+unsigned	l_sts;
+
+	if ( !a_text && a_len )
+		return	CFG$_BADARG;
+
+	if ( !(l_buf = malloc((size_t) a_len + 1)) )
+		return	CFG$_NOMEM;
+
+	if ( a_len )
+		memcpy(l_buf, a_text, a_len);
+
+	l_buf[a_len] = '\0';
+
+	memset(&l_src, 0, sizeof(l_src));
+	l_src.buf = l_buf;
+	l_src.len = a_len;
+
+	cfg$$lex_init(&l_lex, NULL, &l_src);
+
+	l_sts = cfg$$lex_next(&l_lex);
+	l_tok = l_lex.tok;
+
+	/* Not one scalar of the syntax - the text itself is the string */
+	if ( !(1 & l_sts) || (l_tok < CFG$K_TOK_INT) || (l_tok > CFG$K_TOK_STRING) )
+		{
+		l_sts = (l_sts == CFG$_BADNUM) ? CFG$_BADNUM : cfg$set_string(a_base, a_path, a_text, a_len);
+		goto	l_done;
+		}
+
+	if ( l_tok == CFG$K_TOK_STRING )
+		{
+		while ( l_lex.tok == CFG$K_TOK_STRING )
+			if ( !(1 & (l_sts = cfg$$lex_next(&l_lex))) )
+				goto	l_done;
+
+		if ( !(l_str = malloc((size_t) a_len + 1)) || !(1 & (l_sts = cfg$$lex_string(&l_lex, 0, l_lex.tbeg, l_str, &l_slen))) )
+			{
+			l_sts = l_str ? l_sts : CFG$_NOMEM;
+			goto	l_done;
+			}
+		}
+	else if ( !(1 & (l_sts = cfg$$lex_next(&l_lex))) )
+		goto	l_done;
+
+	/* Something after the scalar: "1 2", "true x" - a string */
+	if ( l_lex.tok != CFG$K_TOK_EOF )
+		{
+		l_sts = cfg$set_string(a_base, a_path, a_text, a_len);
+		goto	l_done;
+		}
+
+	switch ( l_tok )
+		{
+		case CFG$K_TOK_INT:	l_sts = cfg$set_int(a_base, a_path, (int32_t) l_lex.ival);	break;
+		case CFG$K_TOK_INT64:	l_sts = cfg$set_int64(a_base, a_path, l_lex.ival);		break;
+		case CFG$K_TOK_FLOAT:	l_sts = cfg$set_float(a_base, a_path, l_lex.fval);		break;
+		case CFG$K_TOK_BOOL:	l_sts = cfg$set_bool(a_base, a_path, (int) l_lex.ival);	break;
+		default:		l_sts = cfg$set_string(a_base, a_path, l_str, l_slen);		break;
+		}
+
+	/* An integer keeps the form of its text: "0x20" stays hexadecimal */
+	if ( (1 & l_sts) && ((l_tok == CFG$K_TOK_INT) || (l_tok == CFG$K_TOK_INT64)) )
+		{
+		CFG$NODE	*l_n;
+
+		if ( 1 & cfg$lookup(a_base, a_path, &l_n) )
+			l_n->fmt = l_lex.fmt;
+		}
+
+l_done:
+	free(l_str);
+	free(l_src.comm);
+	free(l_buf);
+
+	return	l_sts;
+}
+
+
+
+/*
 **  DESCRIPTION: Add a node at the end of a group, a list or an array.
 **
 **  INPUTS:

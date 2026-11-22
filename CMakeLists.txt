@@ -41,6 +41,14 @@ project(yaLIBCFG VERSION ${YALIBCFG_K_MAJOR}.${YALIBCFG_K_MINOR}.${YALIBCFG_K_PA
 
 message(STATUS "yaLIBCFG: ${YALIBCFG_K_IDENT} -> ${PROJECT_VERSION}")
 
+#
+#	Release by default: the messages of StarLet carry the place in the code only in a
+#	build without NDEBUG, which is for the developer
+#
+if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+	set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
@@ -72,6 +80,14 @@ target_compile_options(yalibcfg PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(yalibcfg PUBLIC StarLet::starlet Threads::Threads m)
 
 install(TARGETS yalibcfg ARCHIVE DESTINATION lib)
+
+#
+#	CFGTOOL - the command-line utility
+#
+add_executable(cfgtool src/cfgtool.c)
+target_compile_options(cfgtool PRIVATE -Wall -Wextra -Wno-unused-parameter)
+target_link_libraries(cfgtool PRIVATE yalibcfg)
+install(TARGETS cfgtool RUNTIME DESTINATION bin)
 install(FILES include/yalibcfg.h include/yalibcfgdef.h DESTINATION include)
 
 #

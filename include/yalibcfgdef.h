@@ -27,6 +27,15 @@
 #include	"utility_routines.h"
 #include	"starlet.h"
 
+/*
+**  $FAO of StarLet 1.8.0 formats into a buffer with the parameters written plain.  Built with an
+**  older StarLet, the same macro over __UTIL$FAO stands in (without the parameter count).  Goes
+**  when every machine has StarLet 1.8.
+*/
+#ifndef	$FAO
+#define	$FAO(ctl, outlen, dsc, ...)	__util$fao(ctl, outlen, dsc FAO$_EACH(__VA_ARGS__))
+#endif
+
 #ifdef	__cplusplus
 extern "C" {
 #endif
@@ -80,6 +89,14 @@ enum	{
 	CFG$K_MSG_DEPRECATED,			/* Schema: a setting no longer in use		*/
 	CFG$K_MSG_MOREERRS,			/* More diagnostics than were kept		*/
 	CFG$K_MSG_BADSCHEMA,			/* The schema itself is wrong			*/
+	CFG$K_MSG_CORRECT,			/* CFGTOOL CHECK: the file is correct		*/
+	CFG$K_MSG_IDENTICAL,			/* CFGTOOL DIFF: no differences			*/
+	CFG$K_MSG_DIFFERENT,			/* CFGTOOL DIFF: there are differences		*/
+	CFG$K_MSG_NOSETTING,			/* CFGTOOL: no setting on the path		*/
+	CFG$K_MSG_MODIFIED,			/* CFGTOOL SET: a setting set			*/
+	CFG$K_MSG_DELETED,			/* CFGTOOL DELETE: a setting deleted		*/
+	CFG$K_MSG_CANTSET,			/* CFGTOOL SET, DELETE: refused			*/
+	CFG$K_MSG_OPENOUT,			/* CFGTOOL: cannot create the output file	*/
 	CFG$K_MSG_MAX				/* End-Of-List					*/
 	};
 
@@ -120,6 +137,14 @@ enum	{
 #define	CFG$_DEPRECATED	$CFGSTS(CFG$K_MSG_DEPRECATED,	STS$K_WARN)
 #define	CFG$_MOREERRS	$CFGSTS(CFG$K_MSG_MOREERRS,	STS$K_INFO)
 #define	CFG$_BADSCHEMA	$CFGSTS(CFG$K_MSG_BADSCHEMA,	STS$K_ERROR)
+#define	CFG$_CORRECT	$CFGSTS(CFG$K_MSG_CORRECT,	STS$K_SUCCESS)
+#define	CFG$_IDENTICAL	$CFGSTS(CFG$K_MSG_IDENTICAL,	STS$K_SUCCESS)
+#define	CFG$_DIFFERENT	$CFGSTS(CFG$K_MSG_DIFFERENT,	STS$K_INFO)
+#define	CFG$_NOSETTING	$CFGSTS(CFG$K_MSG_NOSETTING,	STS$K_ERROR)
+#define	CFG$_MODIFIED	$CFGSTS(CFG$K_MSG_MODIFIED,	STS$K_SUCCESS)
+#define	CFG$_DELETED	$CFGSTS(CFG$K_MSG_DELETED,	STS$K_SUCCESS)
+#define	CFG$_CANTSET	$CFGSTS(CFG$K_MSG_CANTSET,	STS$K_ERROR)
+#define	CFG$_OPENOUT	$CFGSTS(CFG$K_MSG_OPENOUT,	STS$K_ERROR)
 
 /*
 **  Node types
@@ -175,6 +200,12 @@ enum	{
 
 #define	CFG$M_POSITIONAL	1		/* lists matched by position, never by key	*/
 #define	CFG$M_NOTIME		2		/* listing without times - the same text every run */
+
+/*
+**  Options of CFG$NODE_TEXT
+*/
+#define	CFG$M_TEXT_NAME		1		/* "name = value;" for a setting		*/
+#define	CFG$M_TEXT_FLAT		2		/* on one line					*/
 
 /*
 **  Limits

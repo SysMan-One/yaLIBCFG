@@ -940,8 +940,10 @@ uint8_t		l_uuid[16];
 		memset(l_uuid, 0, sizeof(l_uuid));
 
 	if ( a_tree->src[0]->mtime && !(a_opts & CFG$M_NOTIME) )
-		$LISTFAO(a_b, "     !%D  UUID !%U!/", a_tree->src[0]->mtime, l_uuid);
-	else	$LISTFAO(a_b, "     UUID !%U!/", l_uuid);
+		$LISTFAO(a_b, "     !%D  UUID !%U", a_tree->src[0]->mtime, l_uuid);
+	else	$LISTFAO(a_b, "     UUID !%U", l_uuid);
+
+	s_puts(a_b, "\n");				/* !/ of FAO is CR LF; a listing is in lines of LF */
 }
 
 
@@ -1047,7 +1049,10 @@ uint32_t	l_n[4] = { 0, 0, 0, 0 };
 
 	if ( a_opts & CFG$M_NOTIME )
 		s_puts(&l_b, "CONFIGURATION DIFFERENCES\n\n");
-	else	$LISTFAO(&l_b, "CONFIGURATION DIFFERENCES!56<!>!%D!/!/", 0);	/* 0 - now		*/
+	else	{
+		$LISTFAO(&l_b, "CONFIGURATION DIFFERENCES!56<!>!%D", 0);	/* 0 - now			*/
+		s_puts(&l_b, "\n\n");
+		}
 
 	s_head(&l_b, "Old:", a_diff->old, a_opts);
 	s_head(&l_b, "New:", a_diff->new, a_opts);
@@ -1068,8 +1073,8 @@ uint32_t	l_n[4] = { 0, 0, 0, 0 };
 	if ( a_diff->count )
 		s_puts(&l_b, "************\n");
 
-	$LISTFAO(&l_b, "!/Number of difference sections found: !UL!/", a_diff->count);
-	$LISTFAO(&l_b, "   changed: !UL, added: !UL, removed: !UL!/!/", l_n[CFG$K_DIFF_MOD], l_n[CFG$K_DIFF_ADD], l_n[CFG$K_DIFF_DEL]);
+	$LISTFAO(&l_b, "\nNumber of difference sections found: !UL\n", a_diff->count);
+	$LISTFAO(&l_b, "   changed: !UL, added: !UL, removed: !UL\n\n", l_n[CFG$K_DIFF_MOD], l_n[CFG$K_DIFF_ADD], l_n[CFG$K_DIFF_DEL]);
 
 	s_puts(&l_b, (a_diff->opts & CFG$M_POSITIONAL) ? "CONFIGURATION DIFFERENCES /POSITIONAL-\n"
 		: a_diff->schema ? "CONFIGURATION DIFFERENCES /SCHEMA-\n" : "CONFIGURATION DIFFERENCES /KEYS=(ID,NAME,KEY)-\n");
