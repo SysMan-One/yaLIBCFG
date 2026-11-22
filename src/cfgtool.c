@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFGTOOL"
-#define	__IDENT__	"X.01-02"
-#define	__REV__		"1.2.0"
+#define	__IDENT__	"X.01-03ECO01"
+#define	__REV__		"1.3.1"
 #define	__FAC__		"CFG"
 
 /*
@@ -51,6 +51,9 @@
 **
 **	X.01-02		22-NOV-2026	RRL
 **		/SKIPERRORS on every command.
+**
+**	X.01-03ECO01	22-NOV-2026	RRL
+**		The banner tells the IDENT of the head module, not of this one.
 **
 **--
 */
@@ -786,7 +789,7 @@ static int	s_do_help	(
 			)
 {
 static	const char	s_text[] =
-	"CFGTOOL - check, format, compare, read and change configuration files (yaLIBCFG " __IDENT__ ")\n"
+	"CFGTOOL - check, format, compare, read and change configuration files (yaLIBCFG " __YALIBCFGDEF_IDENT__ ")\n"
 	"\n"
 	"  CFGTOOL CHECK   file                [/FINGERPRINT /NOCASE /NOINCLUDE]\n"
 	"  CFGTOOL FORMAT  file                [/OUTPUT=file /NOCASE /NOINCLUDE]\n"

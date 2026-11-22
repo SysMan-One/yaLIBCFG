@@ -1,7 +1,7 @@
 #ifndef	__YALIBCFGDEF$H__
 #define	__YALIBCFGDEF$H__	1
 
-#define	__YALIBCFGDEF_IDENT__	"X.01-03"
+#define	__YALIBCFGDEF_IDENT__	"X.01-03ECO01"
 
 /*
 **++
@@ -26,6 +26,9 @@
 **
 **	X.01-03		22-NOV-2026	RRL
 **		Integers: octal with a leading 0, the radix of DCL; ! comments.
+**
+**	X.01-03ECO01	22-NOV-2026	RRL
+**		CFGTOOL tells this IDENT in its banner.
 **
 **--
 */

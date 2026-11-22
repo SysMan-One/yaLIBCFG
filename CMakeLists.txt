@@ -16,6 +16,7 @@
 #					lossless write; round-trip, edit, error tests.
 #		22-NOV-2026	RRL	X.01-02 : CFG$M_SKIPERRS - skip bad settings; CFGTOOL /SKIPERRORS.
 #		22-NOV-2026	RRL	X.01-03 : a leading 0 is octal (as libconfig); %X %D %B %O; ! comments.
+#		22-NOV-2026	RRL	X.01-03ECO01 : CFGTOOL tells the IDENT of the head module.
 #
 #---
 cmake_minimum_required(VERSION 3.16)

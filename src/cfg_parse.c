@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_PARSE"
-#define	__IDENT__	"X.01-02"
-#define	__REV__		"1.2.0"
+#define	__IDENT__	"X.01-03ECO01"
+#define	__REV__		"1.3.1"
 #define	__FAC__		"CFG"
 
 /*
@@ -48,6 +48,9 @@
 **
 **	X.01-02		22-NOV-2026	RRL
 **		CFG$M_SKIPERRS: a bad setting skipped (S_RECOVER), kept as a JUNK node.
+**
+**	X.01-03ECO01	22-NOV-2026	RRL
+**		The width of an integer goes into its node.
 **
 **--
 */
@@ -1118,6 +1121,7 @@ char		*l_str;
 			a_node->type = (a_p->lex.tok == CFG$K_TOK_INT) ? CFG$K_TYPE_INT : CFG$K_TYPE_INT64;
 			a_node->v.i = a_p->lex.ival;
 			a_node->fmt = a_p->lex.fmt;
+			a_node->ndig = a_p->lex.ndig;
 
 			if ( a_p->lex.suffixl )
 				a_node->flags |= CFG$M_SUFFIXL;

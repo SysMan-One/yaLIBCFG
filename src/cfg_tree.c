@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_TREE"
-#define	__IDENT__	"X.01-02"
-#define	__REV__		"1.2.0"
+#define	__IDENT__	"X.01-03ECO01"
+#define	__REV__		"1.3.1"
 #define	__FAC__		"CFG"
 
 /*
@@ -29,6 +29,9 @@
 **
 **	X.01-02		22-NOV-2026	RRL
 **		JUNK nodes are not live: no lookup, no count, no edit.
+**
+**	X.01-03ECO01	22-NOV-2026	RRL
+**		SET of a text: the width of the integer too.
 **
 **--
 */
@@ -1151,6 +1154,7 @@ int		l_scalar = 0;
 		if ( l_n && ((l_n->type == CFG$K_TYPE_INT) || (l_n->type == CFG$K_TYPE_INT64)) )
 			{
 			l_n->fmt = l_lex.fmt;
+			l_n->ndig = l_lex.ndig;
 
 			if ( l_lex.suffixl )
 				{

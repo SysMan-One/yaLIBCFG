@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_WRITE"
-#define	__IDENT__	"X.01-03"
-#define	__REV__		"1.3.0"
+#define	__IDENT__	"X.01-03ECO01"
+#define	__REV__		"1.3.1"
 #define	__FAC__		"CFG"
 
 /*
@@ -46,6 +46,9 @@
 **
 **	X.01-03		22-NOV-2026	RRL
 **		The new forms of integers written back.
+**
+**	X.01-03ECO01	22-NOV-2026	RRL
+**		An integer set keeps the width of its digits.
 **
 **--
 */
@@ -241,6 +244,14 @@ size_t		l_plen;
 		*--l_p = "0123456789ABCDEF"[l_u % l_base];
 		l_u /= l_base;
 		} while ( l_u );
+
+	/*
+	** The width as written: %X0001 set to 2 is %X0002.  Not in plain decimal - a leading 0 there
+	** would make it octal.
+	*/
+	if ( l_fmt != CFG$K_FMT_DEC )
+		while ( ((uint32_t) (l_tmp + sizeof(l_tmp) - l_p) - (uint32_t) (l_wide && (l_fmt != CFG$K_FMT_OCTZ))) < a_n->ndig )
+			*--l_p = '0';
 
 	/* 0 in octal with a leading 0: "00", not "0" - that is decimal */
 	l_p -= l_plen;

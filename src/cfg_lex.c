@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_LEX"
-#define	__IDENT__	"X.01-03"
-#define	__REV__		"1.3.0"
+#define	__IDENT__	"X.01-03ECO01"
+#define	__REV__		"1.3.1"
 #define	__FAC__		"CFG"
 
 /*
@@ -48,6 +48,9 @@
 **
 **	X.01-03		22-NOV-2026	RRL
 **		A leading 0 is octal, as libconfig reads it; %X %D %B %O; ! comments.
+**
+**	X.01-03ECO01	22-NOV-2026	RRL
+**		The width of an integer (NDIG); a bad number is told whole, its '%' too.
 **
 **--
 */
@@ -383,6 +386,7 @@ uint64_t	l_mag = 0, l_lim;
 char		l_tmp[CFG$K_MAXNUM + 1];
 
 	a_lex->fmt = CFG$K_FMT_DEC;
+	a_lex->ndig = 0;
 	a_lex->suffixl = 0;
 
 	if ( (l_buf[l_p] == '-') || (l_buf[l_p] == '+') )
@@ -524,6 +528,9 @@ char		l_tmp[CFG$K_MAXNUM + 1];
 	if ( !l_digits )
 		goto	l_bad;
 
+	/* The width of the digits, leading 0s too - the leading 0 of an octal one is its prefix */
+	a_lex->ndig = (uint8_t) ((a_lex->fmt == CFG$K_FMT_OCTZ) ? l_digits - 1 : l_digits);
+
 	/* L or LL suffix */
 	if ( (l_p < l_len) && ((l_buf[l_p] | 0x20) == 'l') )
 		{
@@ -566,7 +573,7 @@ l_bad:
 	/* The whole of the bad token, from its beginning, for the diagnostic */
 	a_lex->pos = a_lex->tbeg;
 
-	for ( l_p = a_lex->pos; (l_p < l_len) && ($ISNAME(l_buf[l_p]) || (l_buf[l_p] == '.') || (l_buf[l_p] == '+') || (l_buf[l_p] == '-')); l_p++ )
+	for ( l_p = a_lex->pos; (l_p < l_len) && ($ISNAME(l_buf[l_p]) || (l_buf[l_p] == '.') || (l_buf[l_p] == '+') || (l_buf[l_p] == '-') || (l_buf[l_p] == '%')); l_p++ )
 		;
 
 	return	s_lexerr(a_lex, CFG$_BADNUM, a_lex->line, a_lex->pos - a_lex->lpos + 1, l_buf + a_lex->pos, (l_p > a_lex->pos) ? l_p - a_lex->pos : 1);

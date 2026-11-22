@@ -43,6 +43,9 @@
 **	X.01-03		22-NOV-2026	RRL
 **		CFG$K_FMT_OCTZ, CFG$K_FMT_PHEX/PDEC/PBIN/POCT.
 **
+**	X.01-03ECO01	22-NOV-2026	RRL
+**		NDIG: the width of an integer is kept when it is set.
+**
 **--
 */
 
@@ -113,7 +116,9 @@ struct cfg_node_t {
 	uint8_t			namelen,
 				type,
 				flags,
-				fmt;
+				fmt,
+				ndig;			/* an integer not in decimal: its digits as	*/
+							/* written, leading 0s too - kept when set	*/
 	uint16_t		srcno,			/* source of the text of this node		*/
 				incsrc;			/* CFG$K_TYPE_INCLUDE: the source it brings	*/
 	uint32_t		line,
@@ -215,6 +220,7 @@ typedef	struct cfg_lex_t {
 			tline,
 			tcol;
 	uint8_t		fmt,
+			ndig,				/* digits of an integer after its prefix	*/
 			suffixl;
 	int64_t		ival;
 	double		fval;

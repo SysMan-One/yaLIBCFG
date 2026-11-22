@@ -2,7 +2,7 @@
 
 **Configuration Trees in the libconfig Syntax**
 
-Software Version: yaLIBCFG X.01-03
+Software Version: yaLIBCFG X.01-03ECO01
 
 StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
 
@@ -236,8 +236,9 @@ yaLIBCFG does not follow it:
 The other way round there is no promise: `0b`, `0o`, the `%` radix and the `!` comment
 are yaLIBCFG's own - libconfig refuses them.
 
-A number set by the program keeps the form of its text: `%X1F` set to 255 is written
-`%XFF`, `0027` set to 8 is written `010`.
+A number set by the program keeps the form of its text, and the width of its digits:
+`%X1F` set to 255 is written `%XFF`, `%X0001` set to 2 is written `%X0002`, `0027` set to 8
+is written `0010`. A plain decimal number is never padded - a leading `0` would make it octal.
 
 ### 2.3 Comments
 

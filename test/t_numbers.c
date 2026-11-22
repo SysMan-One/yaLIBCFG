@@ -127,6 +127,16 @@ int	main (void)
 	NUM("0x%X1F", CFG$_BADNUM, 0, 0);		/* one radix only			*/
 	NUM("0b%D99", CFG$_BADNUM, 0, 0);
 
+	/* A bad number is told whole */
+	{
+		const char	*txt = "c = 0x%X1F;\n";
+		CFG$TREE	*t;
+
+		cfg$parse_buf(txt, (uint32_t) strlen(txt), "<b>", 0, &t);
+		CHECK((t->nerr == 1) && (t->err[0].len == 6) && !memcmp(t->err[0].text, "0x%X1F", 6), "the whole bad number: [%.*s]", (int) t->err[0].len, t->err[0].text);
+		cfg$free(t);
+	}
+
 	/* The other forms, as before */
 	NUM("0x1F", CFG$_NORMAL, I32, 31);
 	NUM("0b101", CFG$_NORMAL, I32, 5);
@@ -134,20 +144,33 @@ int	main (void)
 	NUM("27", CFG$_NORMAL, I32, 27);
 
 	/* A value set keeps the form of the text */
-	SET("0027", 0, 8, "010");
-	SET("0027", 0, 0, "00");
+	SET("0027", 0, 8, "0010");			/* the width of the text is kept	*/
+	SET("0027", 0, 0, "0000");
 	SET("-027", 0, -8, "-010");
-	SET("0027", 1, 5, "05");			/* fits 32 bits: stays a 32-bit octal	*/
+	SET("07", 0, 0, "00");				/* 0 in octal: "00", not "0" - decimal	*/
+	SET("0027", 1, 5, "0005");			/* fits 32 bits: stays a 32-bit octal	*/
 	SET("0027L", 1, 5, "5L");			/* 64-bit: the L, decimal as read	*/
 	SET("037777777777", 1, 68719476735LL, "0777777777777");
 	SET("%X1F", 0, 255, "%XFF");
 	SET("%x1f", 0, 255, "%XFF");
-	SET("%D27", 0, -3, "-%D3");
+	SET("%D27", 0, -3, "-%D03");
 	SET("%B101", 0, 6, "%B110");
 	SET("%O27", 0, 8, "%O10");
 	SET("%X1F", 1, 4294967296LL, "%X100000000L");
 	SET("0x1F", 0, 255, "0xFF");
 	SET("27", 0, -4, "-4");
+
+	/* The width of the digits is kept; a wider value takes the room it needs */
+	SET("%X0001", 0, 2, "%X0002");
+	SET("%X0001", 0, 0x12345, "%X12345");
+	SET("0x00FF", 0, 1, "0x0001");
+	SET("%B0001", 0, 4, "%B0100");
+	SET("%D0129", 0, 7, "%D0007");
+	SET("%D0129", 0, -7, "-%D0007");
+	SET("%O0777", 0, 8, "%O0010");
+	SET("00777", 0, 8, "00010");			/* the leading 0 is the prefix		*/
+	SET("0b0000L", 1, 3, "0b0011L");
+	SET("129", 0, 5, "5");				/* decimal: never a leading 0		*/
 
 	/* '!' comments to the end of the line, as in DCL; not inside a string */
 	{
