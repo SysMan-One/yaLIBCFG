@@ -39,6 +39,7 @@ endif()
 
 project(yaLIBCFG VERSION ${YALIBCFG_K_MAJOR}.${YALIBCFG_K_MINOR}.${YALIBCFG_K_PATCH} LANGUAGES C)
 
+string(REPLACE "\"" "" YALIBCFG_K_IDENT "${YALIBCFG_K_IDENT}")
 message(STATUS "yaLIBCFG: ${YALIBCFG_K_IDENT} -> ${PROJECT_VERSION}")
 
 #
@@ -72,14 +73,15 @@ add_library(yalibcfg STATIC
 	src/cfg_schema.c
 	src/cfg_sha1.c)
 
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
 target_include_directories(yalibcfg
-	PUBLIC	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>
+	PUBLIC	$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 	PRIVATE	${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 target_compile_options(yalibcfg PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(yalibcfg PUBLIC StarLet::starlet Threads::Threads m)
-
-install(TARGETS yalibcfg ARCHIVE DESTINATION lib)
 
 #
 #	CFGTOOL - the command-line utility
@@ -87,8 +89,113 @@ install(TARGETS yalibcfg ARCHIVE DESTINATION lib)
 add_executable(cfgtool src/cfgtool.c)
 target_compile_options(cfgtool PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(cfgtool PRIVATE yalibcfg)
-install(TARGETS cfgtool RUNTIME DESTINATION bin)
-install(FILES include/yalibcfg.h include/yalibcfgdef.h DESTINATION include)
+
+#
+#	The help library of CFGTOOL (HELP CFGTOOL), when the HELP package is there
+#
+option(YALIBCFG_M_HELPLIB "Build the help libraries of CFGTOOL (needs the HELP package)" ON)
+
+if(YALIBCFG_M_HELPLIB)
+	find_package(HELP 1.0 QUIET)
+endif()
+
+if(HELP_FOUND)
+	message(STATUS "yaLIBCFG: HELP ${HELP_VERSION} found - the help libraries of CFGTOOL are built")
+
+	# HELP_ADD_LIBRARY installs with no COMPONENT: the default one is set for it - "tools"
+	set(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME tools)
+
+	help_add_library(NAME cfgtoollib ALL NOFACILITY
+		SOURCE		${CMAKE_CURRENT_SOURCE_DIR}/doc/cfgtoollib.md
+		OUTPUT		${CMAKE_CURRENT_BINARY_DIR}/cfgtool.hlb
+		IDENT		${YALIBCFG_K_IDENT}
+		DESTINATION	${CMAKE_INSTALL_DATADIR}/help)
+
+	help_add_library(NAME cfgtoollib_ru ALL NOFACILITY
+		SOURCE		${CMAKE_CURRENT_SOURCE_DIR}/doc/cfgtoollib_ru.md
+		OUTPUT		${CMAKE_CURRENT_BINARY_DIR}/cfgtool_ru.hlb
+		IDENT		${YALIBCFG_K_IDENT}RU
+		DESTINATION	${CMAKE_INSTALL_DATADIR}/help/ru)
+
+	unset(CMAKE_INSTALL_DEFAULT_COMPONENT_NAME)
+else()
+	message(STATUS "yaLIBCFG: no HELP package - the help libraries of CFGTOOL are not built")
+endif()
+
+#
+#	Installation: the library as a CMake package (find_package(yaLIBCFG)), the headers, the
+#	manuals - the component "dev"; CFGTOOL and its help libraries - the component "tools".
+#	Only for a top-level build: a project that add_subdirectory()es this one wants the
+#	target, not our installation and packaging.
+#
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+
+install(TARGETS yalibcfg EXPORT yaLIBCFGTargets
+	ARCHIVE	DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT dev
+	INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+install(FILES include/yalibcfg.h include/yalibcfgdef.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT dev)
+
+install(FILES doc/yalibcfg_manual.md doc/yalibcfg_manual_ru.md README.md LICENSE NOTICE
+	DESTINATION ${CMAKE_INSTALL_DOCDIR} COMPONENT dev)
+
+install(EXPORT yaLIBCFGTargets FILE yaLIBCFGTargets.cmake NAMESPACE yaLIBCFG::
+	DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/yaLIBCFG COMPONENT dev)
+
+configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/yaLIBCFGConfig.cmake.in
+	${CMAKE_CURRENT_BINARY_DIR}/yaLIBCFGConfig.cmake
+	INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/yaLIBCFG)
+
+write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/yaLIBCFGConfigVersion.cmake
+	VERSION ${PROJECT_VERSION} COMPATIBILITY SameMajorVersion)
+
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/yaLIBCFGConfig.cmake ${CMAKE_CURRENT_BINARY_DIR}/yaLIBCFGConfigVersion.cmake
+	DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/yaLIBCFG COMPONENT dev)
+
+install(TARGETS cfgtool RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT tools)
+
+#
+#	The Debian packages (cpack -G DEB in the build directory, configured with
+#	-DCMAKE_INSTALL_PREFIX=/usr):
+#
+#	  libyalibcfg-dev_<version>_<arch>.deb	the static library, the headers, the CMake package, the
+#						manuals; depends on libstarlet-dev
+#	  cfgtool_<version>_<arch>.deb		CFGTOOL (StarLet and the library linked in statically -
+#						it needs only the C library) and its help libraries
+#
+#	The version is that of the head module: X.01-01 gives 1.1.0.
+#
+set(CPACK_PACKAGE_NAME			"yalibcfg")
+set(CPACK_PACKAGE_VERSION		${PROJECT_VERSION})
+set(CPACK_PACKAGE_CONTACT		"StarLet Squad and Ruslan R. Laishev <polylab240@gmail.com>")
+set(CPACK_PACKAGE_VENDOR		"StarLet Squad")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY	"yaLIBCFG - configuration trees in the libconfig syntax")
+set(CPACK_GENERATOR			"DEB")
+set(CPACK_DEB_COMPONENT_INSTALL		ON)
+set(CPACK_COMPONENTS_ALL		dev tools)
+set(CPACK_DEBIAN_FILE_NAME		DEB-DEFAULT)
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE	"https://github.com/SysMan-One/yaLIBCFG")
+set(CPACK_DEBIAN_PACKAGE_PRIORITY	optional)
+set(CPACK_DEBIAN_PACKAGE_CONTROL_STRICT_PERMISSION ON)
+
+set(CPACK_DEBIAN_DEV_PACKAGE_NAME	"libyalibcfg-dev")
+set(CPACK_DEBIAN_DEV_PACKAGE_SECTION	libdevel)
+set(CPACK_DEBIAN_DEV_PACKAGE_DEPENDS	"libstarlet-dev (>= 1.7)")
+set(CPACK_COMPONENT_DEV_DESCRIPTION	"yaLIBCFG - configuration trees in the libconfig syntax (development files)
+ A C library that reads libconfig-syntax files into a tree, writes them back
+ losslessly (comments and layout kept), validates them by a schema and compares
+ two configurations, with an OpenVMS-style listing.")
+
+set(CPACK_DEBIAN_TOOLS_PACKAGE_NAME	"cfgtool")
+set(CPACK_DEBIAN_TOOLS_PACKAGE_SECTION	utils)
+set(CPACK_DEBIAN_TOOLS_PACKAGE_SHLIBDEPS ON)
+set(CPACK_COMPONENT_TOOLS_DESCRIPTION	"CFGTOOL - check, format, compare, read and change libconfig-syntax files
+ The command-line utility of yaLIBCFG, with a DCL-style command line:
+ CFGTOOL CHECK, FORMAT, DIFF, GET, SET, DELETE.")
+
+include(CPack)
+
+endif()
 
 #
 #	The examples of the manual - built and run with the tests, so the code of the

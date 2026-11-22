@@ -1,0 +1,18 @@
+#
+#  CMake package configuration for yaLIBCFG - configuration trees in the libconfig syntax.
+#
+#  A consumer does:
+#      find_package(yaLIBCFG REQUIRED)
+#      target_link_libraries(app PRIVATE yaLIBCFG::yalibcfg)
+#
+#  The library is built on StarLet, which is found here as well.
+#
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(StarLet 1.7)
+find_dependency(Threads)
+
+include("${CMAKE_CURRENT_LIST_DIR}/yaLIBCFGTargets.cmake")
+
+check_required_components(yaLIBCFG)
