@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_TREE"
-#define	__IDENT__	"X.01-03ECO01"
-#define	__REV__		"1.3.1"
+#define	__IDENT__	"X.01-03ECO03"
+#define	__REV__		"1.3.3"
 #define	__FAC__		"CFG"
 
 /*
@@ -32,6 +32,10 @@
 **
 **	X.01-03ECO01	22-NOV-2026	RRL
 **		SET of a text: the width of the integer too.
+**
+**	X.01-03ECO03	22-NOV-2026	RRL
+**		SET of a text: a plain decimal value keeps the old form and width; the same radix
+**		keeps the old width.
 **
 **--
 */
@@ -1143,8 +1147,11 @@ int		l_scalar = 0;
 		}
 
 	/*
-	** An integer keeps the form of its text.  The node is the one found before the change - a
-	** path with a key the change itself alters ("ports.[id=9].id") leads nowhere after it.
+	** The form of an integer.  A plain decimal text is only a value: the old form stays, its
+	** width too (%D0129 set to 7 is %D0007), as with CFG$SET_INT.  A text in the radix of the
+	** old one keeps the old width if it is narrower (%D0129 set to %D7 is %D0007); a text in
+	** another radix brings its own form.  The node is the one found before the change - a path
+	** with a key the change itself alters ("ports.[id=9].id") leads nowhere after it.
 	*/
 	if ( (1 & l_sts) && l_scalar && ((l_tok == CFG$K_TOK_INT) || (l_tok == CFG$K_TOK_INT64)) )
 		{
@@ -1153,8 +1160,14 @@ int		l_scalar = 0;
 
 		if ( l_n && ((l_n->type == CFG$K_TYPE_INT) || (l_n->type == CFG$K_TYPE_INT64)) )
 			{
-			l_n->fmt = l_lex.fmt;
-			l_n->ndig = l_lex.ndig;
+			if ( l_lex.fmt == CFG$K_FMT_DEC )
+				;				/* the old form and width stay		*/
+			else if ( l_lex.fmt == l_n->fmt )
+				l_n->ndig = (l_lex.ndig > l_n->ndig) ? l_lex.ndig : l_n->ndig;
+			else	{
+				l_n->fmt = l_lex.fmt;
+				l_n->ndig = l_lex.ndig;
+				}
 
 			if ( l_lex.suffixl )
 				{

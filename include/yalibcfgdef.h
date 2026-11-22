@@ -1,7 +1,7 @@
 #ifndef	__YALIBCFGDEF$H__
 #define	__YALIBCFGDEF$H__	1
 
-#define	__YALIBCFGDEF_IDENT__	"X.01-03ECO02"
+#define	__YALIBCFGDEF_IDENT__	"X.01-03ECO03"
 
 /*
 **++
@@ -32,6 +32,9 @@
 **
 **	X.01-03ECO02	22-NOV-2026	RRL
 **		CFGTOOL help: the comments and the integers of a file.
+**
+**	X.01-03ECO03	22-NOV-2026	RRL
+**		CFG$SET_VALUE (CFGTOOL SET): a plain number keeps the old form and width.
 **
 **--
 */

@@ -2,7 +2,7 @@
 
 **Configuration Trees in the libconfig Syntax**
 
-Software Version: yaLIBCFG X.01-03ECO02
+Software Version: yaLIBCFG X.01-03ECO03
 
 StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
 
@@ -1362,8 +1362,11 @@ text, a command line for one (CFGTOOL SET). `9216`, `0x1F`, `%X1F`, `0755` (octa
 `"text"` give their types; any text that is not exactly one such value (`10.0.0.5`, `12abc`,
 `1 2`, `12 # note`, `09`, an empty one) is set as a string. A setting that is there already keeps
 its type where the text allows: a string takes the text as it is, a float takes an integer.
-An integer takes the form of the new text: `%XFF` is written `%XFF`, `8` is written `8` even
-where the old value was `010`; `L` makes it 64-bit.
+An integer: a plain decimal text is only a value - the old form and width stay, as with
+CFG$SET_INT (`%D0129` set to `7` is `%D0007`, `0x00FF` set to `1` is `0x0001`); a text in
+the radix of the old value keeps the old width where it is narrower (`%D0129` set to `%D7`
+is `%D0007`); a text in another radix brings its own form (`%D0129` set to `%X7` is `%X7`).
+`L` makes it 64-bit.
 
 **Condition Values Returned** - as CFG$SET_*.
 
@@ -1701,12 +1704,14 @@ Sets the value and writes the file back in place (CFG$WRITE): only the value cha
 comments and the layout stay. A setting that is not there is made with the groups on its path.
 
 With `/TYPE=AUTO`, the default, the type comes from the text as in a file (CFG$SET_VALUE):
-`1500` is an integer, `0x1F` or `%X1F` a hexadecimal one (written back so), `0755` an octal
+`1500` is an integer, `0x1F` or `%X1F` a hexadecimal one, `0755` an octal
 one (493), `12L` a 64-bit one, `1.5` a float, `true` a boolean, `"text"` a string. Whatever is not exactly one such
 value - `10.0.0.5`, `12abc`, `12 # note`, `09` - is a string, as it stands. A setting that is there
 already keeps its type where the text allows: a string takes the text as it is (`12` stays the
 string "12"), a float takes an integer (`2` becomes 2.0). `/TYPE=STRING` sets the text as a
-string always.
+string always. An integer set by a plain number keeps the form and the width of the old one
+(`%D0129` set to `7` is `%D0007`); a number with a radix keeps the old width in the same radix
+(`%D7` gives `%D0007`) and brings its own form in another (`%X7`).
 
 `/OUTPUT` writes the changed main file elsewhere and leaves the original as it was. It is
 refused (CFG$_INCMODIFIED) when the change falls into an included file: that change would be

@@ -136,15 +136,30 @@ if(NOT GOT STREQUAL "a = 1;\nb = ;\nc = 4;\nd = $;\n")
 	message(FATAL_ERROR "set /skiperrors did not keep the bad settings:\n${GOT}")
 endif()
 
-#	The radix of DCL and a leading 0: read, set; SET takes the form of the new text
+#	The radix of DCL and a leading 0: read, set; the same radix keeps the old width
 file(WRITE ${WORK}/rdx.cfg "mask = %X1F;\numask = 0027;\n")
 RUN(0 "%X1F\n" get rdx.cfg mask)
 RUN(0 "0027\n" get rdx.cfg umask)
 RUN(0 "" set rdx.cfg mask %XFF)
 RUN(0 "" set rdx.cfg umask 022)
 file(READ ${WORK}/rdx.cfg GOT)
-if(NOT GOT STREQUAL "mask = %XFF;\numask = 022;\n")
+if(NOT GOT STREQUAL "mask = %XFF;\numask = 0022;\n")
 	message(FATAL_ERROR "the radix forms were not kept:\n${GOT}")
+endif()
+
+#	SET of a text and the width: a plain value keeps the old form and width, the same radix the
+#	old width, another radix brings its own
+file(WRITE ${WORK}/wd.cfg "a = %D0129;\nb = %D0129;\nc = %D0129;\nh = %X0001;\nk = %X0001;\no = 0027;\nd = 129;\n")
+RUN(0 "" set wd.cfg a 7)
+RUN(0 "" set wd.cfg b %D7)
+RUN(0 "" set wd.cfg c %X7)
+RUN(0 "" set wd.cfg h 2)
+RUN(0 "" set wd.cfg k %X123456)
+RUN(0 "" set wd.cfg o 8)
+RUN(0 "" set wd.cfg d 5)
+file(READ ${WORK}/wd.cfg GOT)
+if(NOT GOT STREQUAL "a = %D0007;\nb = %D0007;\nc = %X7;\nh = %X0002;\nk = %X123456;\no = 0010;\nd = 5;\n")
+	message(FATAL_ERROR "SET did not keep the width:\n${GOT}")
 endif()
 
 #	HELP, errors of the command line
