@@ -71,8 +71,8 @@ typedef	struct cfg_arena_t {
 	struct cfg_arena_t	*next;
 	size_t			used,
 				size;
-	char			data[];
-} CFG$ARENA;
+	_Alignas(max_align_t) char data[];		/* aligned for any type: on a 32-bit	*/
+} CFG$ARENA;						/* MIPS a double at 4 is a bus error	*/
 
 typedef	struct cfg_src_t {
 	char		*path;				/* as given or resolved, zero-terminated	*/

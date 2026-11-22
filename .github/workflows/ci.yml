@@ -12,7 +12,7 @@
 #	  gcc		Ubuntu 24.04 on x86_64 and aarch64; on x86_64 a second build under
 #			-fsanitize=address,undefined with leak detection on.  libconfig-dev is
 #			installed, so the comparison test with libconfig runs (8 tests).
-#	  musl		the same in an Alpine container (musl libc), x86_64 and aarch64.
+#	  musl		musl-gcc (musl-tools) on the Ubuntu runners, amd64 and arm64, as StarLet's CI.
 #	  cross		armhf, mips (big endian), mipsel and mips64el on Debian 12 with the cross
 #			compilers of crossbuild-essential; StarLet is cross-built the same way, the
 #			tests run under qemu-user (CMAKE_CROSSCOMPILING_EMULATOR).
@@ -89,6 +89,8 @@ jobs:
 
   musl:
     name: musl ${{ matrix.arch }}
+    # musl-gcc of musl-tools on the Ubuntu runners, as StarLet's CI does: GitHub runs JavaScript
+    # actions (checkout) in an Alpine container on x64 runners only, not on arm64.
     strategy:
       fail-fast: false
       matrix:
@@ -98,32 +100,34 @@ jobs:
           # atomics (LSE), musl has no such symbol, so they are inlined here (as StarLet's CI does).
           - { arch: arm64, runner: ubuntu-24.04-arm, arch_cflags: -mno-outline-atomics }
     runs-on: ${{ matrix.runner }}
-    container: alpine:3
     timeout-minutes: 20
     env:
       ARCH_CFLAGS: ${{ matrix.arch_cflags }}
     steps:
       - name: Install prerequisites
-        run: apk add --no-cache build-base cmake pkgconf libconfig-dev linux-headers git ca-certificates
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends musl-tools cmake git ca-certificates
 
       - uses: actions/checkout@v5
 
-      - name: Build and install StarLet
+      - name: Build and install StarLet (musl-gcc)
         run: |
           git clone --depth 1 "$STARLET_REPO" "$RUNNER_TEMP/starlet-src"
           git -C "$RUNNER_TEMP/starlet-src" log -1 --format='StarLet: %H %cd'
           cmake -S "$RUNNER_TEMP/starlet-src" -B "$RUNNER_TEMP/starlet-build" -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_TESTING=OFF -DCMAKE_C_FLAGS="$ARCH_CFLAGS" -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/starlet"
+            -DBUILD_TESTING=OFF -DCMAKE_C_COMPILER=musl-gcc -DCMAKE_C_FLAGS="$ARCH_CFLAGS" \
+            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/starlet"
           cmake --build "$RUNNER_TEMP/starlet-build" -j "$(nproc)"
           cmake --install "$RUNNER_TEMP/starlet-build"
 
-      - name: Build yaLIBCFG and run the tests (CMake / CTest, musl)
+      - name: Build yaLIBCFG and run the tests (CMake / CTest, musl-gcc)
         run: |
+          # No libconfig for musl here: the comparison test is off
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/starlet" \
-            -DCMAKE_C_FLAGS="$ARCH_CFLAGS"
+            -DCMAKE_C_COMPILER=musl-gcc -DCMAKE_C_FLAGS="$ARCH_CFLAGS"
           cmake --build build -j "$(nproc)"
           ctest --test-dir build --output-on-failure
-
   cross:
     name: cross ${{ matrix.arch }}
     strategy:
