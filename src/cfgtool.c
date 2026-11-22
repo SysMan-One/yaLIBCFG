@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFGTOOL"
-#define	__IDENT__	"X.01-03ECO01"
-#define	__REV__		"1.3.1"
+#define	__IDENT__	"X.01-03ECO02"
+#define	__REV__		"1.3.2"
 #define	__FAC__		"CFG"
 
 /*
@@ -54,6 +54,9 @@
 **
 **	X.01-03ECO01	22-NOV-2026	RRL
 **		The banner tells the IDENT of the head module, not of this one.
+**
+**	X.01-03ECO02	22-NOV-2026	RRL
+**		The help tells the comments (! # // and the block) and the integers of a file.
 **
 **--
 */
@@ -801,6 +804,8 @@ static	const char	s_text[] =
 	"Every command takes /SKIPERRORS: bad settings are skipped (each one reported) - CHECK then\n"
 	"reports all the errors of a file at once.\n"
 	"A path: system.hostname, vlans.[1], ports.[id=9].mtu.  A qualifier may be written --name too.\n"
+	"In a file: comments ! # // to the end of the line and /* ... */; integers 129, 0x1F or %X1F,\n"
+	"0b101 or %B101, 0777 (octal) or 0o777 or %O777, %D129.\n"
 	"Exit status: 0 - success (DIFF: no differences), 1 - DIFF found differences, 2 - an error.\n"
 	"The parameters and qualifiers of a command: CFGTOOL <command> /HELP.  All of it: HELP CFGTOOL.\n";
 

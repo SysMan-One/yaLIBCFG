@@ -1,7 +1,7 @@
 #ifndef	__YALIBCFGDEF$H__
 #define	__YALIBCFGDEF$H__	1
 
-#define	__YALIBCFGDEF_IDENT__	"X.01-03ECO01"
+#define	__YALIBCFGDEF_IDENT__	"X.01-03ECO02"
 
 /*
 **++
@@ -29,6 +29,9 @@
 **
 **	X.01-03ECO01	22-NOV-2026	RRL
 **		CFGTOOL tells this IDENT in its banner.
+**
+**	X.01-03ECO02	22-NOV-2026	RRL
+**		CFGTOOL help: the comments and the integers of a file.
 **
 **--
 */

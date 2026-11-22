@@ -2,7 +2,7 @@
 
 **Деревья конфигураций в синтаксисе libconfig**
 
-Версия программы: yaLIBCFG X.01-03ECO01
+Версия программы: yaLIBCFG X.01-03ECO02
 
 StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
 

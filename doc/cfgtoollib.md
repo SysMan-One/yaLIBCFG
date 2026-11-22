@@ -21,6 +21,25 @@ text -- to the standard output. The exit status for the shell: 0 --
 success (for DIFF: no differences), 1 -- DIFF found differences, 2 --
 an error.
 
+## File -- what a configuration file holds
+
+Settings, a name and a value each, in groups, lists and arrays:
+
+```
+! the switch of the lab -- a comment to the end of the line, as in DCL
+system = {
+  hostname = "edge-1";          # so is this one
+  umask    = 0027;              // and this one: 0027 is octal, 23
+  flags    = %B0001;            /* or a block one, over lines too */
+  mask     = %XFF00;
+};
+```
+
+Comments: ! # and // to the end of the line, /* ... */ anywhere.
+Integers: 129, 0x1F or %X1F, 0b101 or %B101, 0o777 or 0777 or %O777,
+%D129; one prefix only -- 0x0001 or %X0001, not 0x%X1. A value
+changed keeps the form of its text and the width of its digits.
+
 ## Paths -- how a setting is named
 
 A path leads from the top of the file to a setting:
@@ -169,7 +188,7 @@ AUTO (the default) takes the type from the text, as in a file: 1500
 is an integer, 0x1F or %X1F a hexadecimal one (written back in its
 form), 12L a 64-bit one, 1.5 a
 float, true a boolean, "text" a string. Whatever is not exactly one
-such value -- 10.0.0.5, 12abc, 12 # note -- is a string as it
+such value -- 10.0.0.5, 12abc, 12 # note, 12 ! note -- is a string as it
 stands. A setting that is there already keeps its type: a string
 takes the text as it is, a float takes an integer. STRING sets the
 text as a string always.

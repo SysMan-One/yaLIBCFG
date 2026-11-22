@@ -2,7 +2,7 @@
 
 **Configuration Trees in the libconfig Syntax**
 
-Software Version: yaLIBCFG X.01-03ECO01
+Software Version: yaLIBCFG X.01-03ECO02
 
 StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
 
