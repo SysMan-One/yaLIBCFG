@@ -3,7 +3,7 @@
 #
 set(YALIBCFG_K_CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus)
 
-foreach(YALIBCFG_K_T t_roundtrip t_edit t_errors t_diff t_schema t_skip)
+foreach(YALIBCFG_K_T t_roundtrip t_edit t_errors t_diff t_schema t_skip t_numbers)
 	add_executable(${YALIBCFG_K_T} ${YALIBCFG_K_T}.c)
 	target_link_libraries(${YALIBCFG_K_T} PRIVATE yalibcfg)
 	target_compile_options(${YALIBCFG_K_T} PRIVATE -Wall -Wno-unused-parameter)
@@ -31,6 +31,8 @@ target_include_directories(t_schema PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME schema COMMAND t_schema)
 target_include_directories(t_skip PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME skip COMMAND t_skip)
+target_include_directories(t_numbers PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME numbers COMMAND t_numbers)
 
 #
 #	The same files through libconfig, when it is there
@@ -44,7 +46,23 @@ if(LIBCONFIG_FOUND)
 	add_executable(t_libconfig t_libconfig.c)
 	target_include_directories(t_libconfig PRIVATE ${LIBCONFIG_INCLUDE_DIRS})
 	target_link_libraries(t_libconfig PRIVATE yalibcfg ${LIBCONFIG_LIBRARIES})
-	add_test(NAME libconfig COMMAND t_libconfig ${YALIBCFG_K_FILES})
+	#
+	#	libconfig before 1.6 reads 0027 as 27, not as octal: files with such a number are
+	#	read as libconfig 1.6 and later reads them, the older one is not asked about them
+	#
+	set(YALIBCFG_K_CMPFILES ${YALIBCFG_K_FILES})
+
+	if(LIBCONFIG_VERSION VERSION_LESS 1.6)
+		foreach(YALIBCFG_K_F ${YALIBCFG_K_FILES})
+			file(STRINGS ${YALIBCFG_K_F} YALIBCFG_K_OCT REGEX "(^|[^0-9A-Za-z_.\"])[-+]?0[0-7]")
+
+			if(YALIBCFG_K_OCT)
+				list(REMOVE_ITEM YALIBCFG_K_CMPFILES ${YALIBCFG_K_F})
+			endif()
+		endforeach()
+	endif()
+
+	add_test(NAME libconfig COMMAND t_libconfig ${YALIBCFG_K_CMPFILES})
 	message(STATUS "yaLIBCFG: libconfig ${LIBCONFIG_VERSION} found - the comparison test is on")
 else()
 	message(STATUS "yaLIBCFG: libconfig not found - the comparison test is off")

@@ -40,6 +40,9 @@
 **	X.01-02		22-NOV-2026	RRL
 **		JUNK, CFG$K_TOK_ERROR, CFG$M_OPENJUNK, the skip counters.
 **
+**	X.01-03		22-NOV-2026	RRL
+**		CFG$K_FMT_OCTZ, CFG$K_FMT_PHEX/PDEC/PBIN/POCT.
+**
 **--
 */
 
@@ -68,9 +71,14 @@
 */
 enum	{
 	CFG$K_FMT_DEC		= 0,
-	CFG$K_FMT_HEX,
-	CFG$K_FMT_BIN,
-	CFG$K_FMT_OCT
+	CFG$K_FMT_HEX,					/* 0x1F						*/
+	CFG$K_FMT_BIN,					/* 0b101					*/
+	CFG$K_FMT_OCT,					/* 0o27						*/
+	CFG$K_FMT_OCTZ,					/* 027 - octal, as libconfig			*/
+	CFG$K_FMT_PHEX,					/* %X1F - the radix of DCL			*/
+	CFG$K_FMT_PDEC,					/* %D27						*/
+	CFG$K_FMT_PBIN,					/* %B101					*/
+	CFG$K_FMT_POCT					/* %O27						*/
 	};
 
 typedef	struct cfg_arena_t {

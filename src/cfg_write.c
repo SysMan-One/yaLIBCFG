@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_WRITE"
-#define	__IDENT__	"X.01-02"
-#define	__REV__		"1.2.0"
+#define	__IDENT__	"X.01-03"
+#define	__REV__		"1.3.0"
 #define	__FAC__		"CFG"
 
 /*
@@ -43,6 +43,9 @@
 **
 **	X.01-02		22-NOV-2026	RRL
 **		JUNK written raw; new settings go before an open JUNK; a source no node refers to is written as read.
+**
+**	X.01-03		22-NOV-2026	RRL
+**		The new forms of integers written back.
 **
 **--
 */
@@ -204,32 +207,46 @@ static void	s_gen_int	(
 		CFG$NODE	*a_n
 			)
 {
+/* By CFG$K_FMT_*: the base and the prefix of the digits */
+static const uint8_t	s_base[] = { 10, 16, 2, 8, 8, 16, 10, 2, 8 };
+static const char	*s_pfx[] = { "", "0x", "0b", "0o", "0", "%X", "%D", "%B", "%O" };
+
 char		l_tmp[80], *l_p = l_tmp + sizeof(l_tmp);
-int		l_wide = (a_n->type == CFG$K_TYPE_INT64);
+int		l_wide = (a_n->type == CFG$K_TYPE_INT64), l_signed;
+uint32_t	l_fmt = (a_n->fmt < sizeof(s_base)) ? a_n->fmt : CFG$K_FMT_DEC;
+unsigned	l_base = s_base[l_fmt];
 uint64_t	l_u = l_wide ? (uint64_t) a_n->v.i : (uint64_t) (uint32_t) (int32_t) a_n->v.i;
-unsigned	l_base = (a_n->fmt == CFG$K_FMT_HEX) ? 16 : (a_n->fmt == CFG$K_FMT_BIN) ? 2 : 8;
+size_t		l_plen;
 
-	/* Built from the right: suffix, digits, prefix or sign */
-	if ( l_wide )
-		*--l_p = 'L';
+	/* 64 bits in octal with a leading 0 only past 32: a smaller one would be read back as 32-bit */
+	if ( l_wide && (l_fmt == CFG$K_FMT_OCTZ) && (a_n->v.i >= INT32_MIN) && (a_n->v.i <= INT32_MAX) )
+		l_base = s_base[l_fmt = CFG$K_FMT_DEC];
 
-	if ( a_n->fmt == CFG$K_FMT_DEC )
-		{
+	l_plen = strlen(s_pfx[l_fmt]);
+
+	/*
+	** Built from the right: suffix, digits, prefix, sign.  Decimal - %D too - and octal with a
+	** leading 0 have a sign (the latter is read as a signed 64-bit number); the others show the
+	** bits.  An octal 0027 that became 64-bit stays octal: the L would make it decimal.
+	*/
+	l_signed = (l_base == 10) || (l_fmt == CFG$K_FMT_OCTZ);
+
+	if ( l_signed )
 		l_u = (a_n->v.i < 0) ? 0 - (uint64_t) a_n->v.i : (uint64_t) a_n->v.i;
-		l_base = 10;
-		}
+
+	if ( l_wide && (l_fmt != CFG$K_FMT_OCTZ) )
+		*--l_p = 'L';
 
 	do	{
 		*--l_p = "0123456789ABCDEF"[l_u % l_base];
 		l_u /= l_base;
 		} while ( l_u );
 
-	if ( a_n->fmt != CFG$K_FMT_DEC )
-		{
-		*--l_p = (a_n->fmt == CFG$K_FMT_HEX) ? 'x' : (a_n->fmt == CFG$K_FMT_BIN) ? 'b' : 'o';
-		*--l_p = '0';
-		}
-	else if ( a_n->v.i < 0 )
+	/* 0 in octal with a leading 0: "00", not "0" - that is decimal */
+	l_p -= l_plen;
+	memcpy(l_p, s_pfx[l_fmt], l_plen);
+
+	if ( l_signed && (a_n->v.i < 0) )
 		*--l_p = '-';
 
 	s_put(a_o, l_p, (uint32_t) (l_tmp + sizeof(l_tmp) - l_p));

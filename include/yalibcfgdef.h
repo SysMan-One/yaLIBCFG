@@ -1,7 +1,7 @@
 #ifndef	__YALIBCFGDEF$H__
 #define	__YALIBCFGDEF$H__	1
 
-#define	__YALIBCFGDEF_IDENT__	"X.01-02"
+#define	__YALIBCFGDEF_IDENT__	"X.01-03"
 
 /*
 **++
@@ -23,6 +23,9 @@
 **
 **	X.01-02		22-NOV-2026	RRL
 **		CFG$M_SKIPERRS, CFG$K_TYPE_JUNK, CFG$_SKIPPED.
+**
+**	X.01-03		22-NOV-2026	RRL
+**		Integers: octal with a leading 0, the radix of DCL; ! comments.
 **
 **--
 */

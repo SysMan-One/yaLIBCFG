@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_LEX"
-#define	__IDENT__	"X.01-02"
-#define	__REV__		"1.2.0"
+#define	__IDENT__	"X.01-03"
+#define	__REV__		"1.3.0"
 #define	__FAC__		"CFG"
 
 /*
@@ -19,13 +19,20 @@
 **		source (COMM) so that the parse can tell a comment line from a blank one when it
 **		gathers the comment lines that belong to a setting.
 **
-**		Tokens follow libconfig 1.7:
+**		Every libconfig file (1.6 and later) is read, its numbers as libconfig reads them -
+**		but a number libconfig loses without a word (0x100000000 cut to 32 bits, a value
+**		past 64 bits clamped, 1e400 as infinity) is kept or refused here; the text yaLIBCFG
+**		takes besides (0b, 0o, %X %D %B %O, '!') is its own:
 **		    name	[A-Za-z*][-A-Za-z0-9_*]*
-**		    integer	[-+]?[0-9]+ | 0x[0-9A-Fa-f]+ | 0b[01]+ | 0o[0-7]+, an L or LL suffix: 64 bits
+**		    integer	[-+]?[0-9]+ decimal; [-+]?0[0-7]+ octal, as libconfig (0027 is 23; but
+**				0027L is decimal 27, and an octal number past 32 bits is 64-bit,
+**				as libconfig reads them); 0x[0-9A-Fa-f]+ | 0b[01]+ | 0o[0-7]+;
+**				[-+]?%X[0-9A-Fa-f]+ | %D[0-9]+ | %B[01]+ | %O[0-7]+ (the radix of
+**				DCL, any case); an L or LL suffix: 64 bits
 **		    float	[-+]?([0-9]*.[0-9]*([eE][-+]?[0-9]+)? | [0-9]+[eE][-+]?[0-9]+)
 **		    boolean	true / false, any case
 **		    string	"..." with \\ \" \n \r \t \f \xHH
-**		    comments	# ..., // ..., slash-star ... star-slash
+**		    comments	# ..., // ..., ! ... (DCL) to the end of the line; slash-star ... star-slash
 **
 **  AUTHOR:	StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
 **
@@ -38,6 +45,9 @@
 **
 **	X.01-02		22-NOV-2026	RRL
 **		A failed token is CFG$K_TOK_ERROR; its position is where it would begin.
+**
+**	X.01-03		22-NOV-2026	RRL
+**		A leading 0 is octal, as libconfig reads it; %X %D %B %O; ! comments.
 **
 **--
 */
@@ -297,7 +307,7 @@ unsigned	l_sts;
 		l_beg = a_lex->pos;
 
 		/* # ... and // ... - up to the end of the line, the newline is not a part of it */
-		if ( (l_c == '#') || ((l_c == '/') && (a_lex->pos + 1 < l_len) && (l_buf[a_lex->pos + 1] == '/')) )
+		if ( (l_c == '#') || (l_c == '!') || ((l_c == '/') && (a_lex->pos + 1 < l_len) && (l_buf[a_lex->pos + 1] == '/')) )
 			{
 			while ( (a_lex->pos < l_len) && (l_buf[a_lex->pos] != '\n') )
 				a_lex->pos++;
@@ -368,7 +378,7 @@ static unsigned	s_number	(
 {
 const	char	*l_buf = a_lex->src->buf;
 uint32_t	l_len = a_lex->src->len, l_p = a_lex->pos, l_digits = 0, l_base = 10;
-int		l_neg = 0, l_float = 0;
+int		l_neg = 0, l_float = 0, l_pct = 0;
 uint64_t	l_mag = 0, l_lim;
 char		l_tmp[CFG$K_MAXNUM + 1];
 
@@ -403,7 +413,24 @@ char		l_tmp[CFG$K_MAXNUM + 1];
 			l_p += 2;
 		}
 
-	if ( l_base == 10 )
+	/* The radix of DCL: %X, %D, %B, %O - an integer always; not after 0x, 0b, 0o */
+	if ( (l_base == 10) && (l_p + 1 < l_len) && (l_buf[l_p] == '%') )
+		{
+		static const char	s_rdx[] = "xdbo";
+		static const uint8_t	s_base[] = { 16, 10, 2, 8 },
+					s_fmt[] = { CFG$K_FMT_PHEX, CFG$K_FMT_PDEC, CFG$K_FMT_PBIN, CFG$K_FMT_POCT };
+		const char		*l_r = memchr(s_rdx, l_buf[l_p + 1] | 0x20, 4);
+
+		if ( !l_r )
+			goto	l_bad;
+
+		l_base = s_base[l_r - s_rdx];
+		a_lex->fmt = s_fmt[l_r - s_rdx];
+		l_pct = 1;
+		l_p += 2;
+		}
+
+	if ( (l_base == 10) && !l_pct )
 		{
 		/* Decimal: an integer unless a '.' or an exponent follows */
 		uint32_t	l_q = l_p;
@@ -439,6 +466,16 @@ char		l_tmp[CFG$K_MAXNUM + 1];
 
 		if ( !l_digits )
 			goto	l_bad;
+
+		/*
+		** An integer with a leading 0 is octal, as libconfig reads it - but with the L suffix
+		** it is decimal there (0027L is 27), and so it is here
+		*/
+		if ( !l_float && (l_digits > 1) && (l_buf[l_p] == '0') && !((l_q < l_len) && ((l_buf[l_q] | 0x20) == 'l')) )
+			{
+			l_base = 8;
+			a_lex->fmt = CFG$K_FMT_OCTZ;
+			}
 
 		if ( l_float )
 			{
@@ -503,12 +540,16 @@ char		l_tmp[CFG$K_MAXNUM + 1];
 	*/
 	l_lim = (l_base == 10) ? (l_neg ? (uint64_t) INT64_MAX + 1 : (uint64_t) INT64_MAX) : UINT64_MAX;
 
+	/* An octal number with a leading 0 is read by libconfig as a signed 64-bit one */
+	if ( a_lex->fmt == CFG$K_FMT_OCTZ )
+		l_lim = l_neg ? (uint64_t) INT64_MAX + 1 : (uint64_t) INT64_MAX;
+
 	if ( l_mag > l_lim )
 		goto	l_bad;
 
 	a_lex->ival = l_neg ? (int64_t) (0 - l_mag) : (int64_t) l_mag;
 
-	if ( (l_base != 10) && !l_neg && (l_mag <= UINT32_MAX) && !a_lex->suffixl )
+	if ( (l_base != 10) && (a_lex->fmt != CFG$K_FMT_OCTZ) && !l_neg && (l_mag <= UINT32_MAX) && !a_lex->suffixl )
 		a_lex->ival = (int64_t) (int32_t) (uint32_t) l_mag;	/* 0xFFFFFFFF - a 32-bit -1, as libconfig	*/
 
 	a_lex->tok = (a_lex->suffixl || (a_lex->ival < INT32_MIN) || (a_lex->ival > INT32_MAX)) ? CFG$K_TOK_INT64 : CFG$K_TOK_INT;
@@ -625,8 +666,8 @@ char		l_c;
 			return	s_lexerr(a_lex, CFG$_SYNTAX, a_lex->tline, a_lex->tcol, "unexpected '@'", 14);
 
 		default:
-			if ( $ISDIGIT(l_c) || (((l_c == '-') || (l_c == '+') || (l_c == '.')) && (a_lex->pos + 1 < l_len)
-				&& ($ISDIGIT(l_buf[a_lex->pos + 1]) || (l_buf[a_lex->pos + 1] == '.'))) )
+			if ( $ISDIGIT(l_c) || (l_c == '%') || (((l_c == '-') || (l_c == '+') || (l_c == '.')) && (a_lex->pos + 1 < l_len)
+				&& ($ISDIGIT(l_buf[a_lex->pos + 1]) || (l_buf[a_lex->pos + 1] == '.') || ((l_c != '.') && (l_buf[a_lex->pos + 1] == '%')))) )
 				{
 				if ( !(1 & (l_sts = s_number(a_lex))) )
 					return	l_sts;

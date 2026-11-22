@@ -166,7 +166,8 @@ $ cfgtool set router.cfg system.location "Lab, rack 4"
 ### /TYPE=keyword
 
 AUTO (the default) takes the type from the text, as in a file: 1500
-is an integer, 0x1F a hexadecimal one, 12L a 64-bit one, 1.5 a
+is an integer, 0x1F or %X1F a hexadecimal one (written back in its
+form), 12L a 64-bit one, 1.5 a
 float, true a boolean, "text" a string. Whatever is not exactly one
 such value -- 10.0.0.5, 12abc, 12 # note -- is a string as it
 stands. A setting that is there already keeps its type: a string

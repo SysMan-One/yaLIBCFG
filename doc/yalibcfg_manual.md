@@ -2,7 +2,7 @@
 
 **Configuration Trees in the libconfig Syntax**
 
-Software Version: yaLIBCFG X.01-02
+Software Version: yaLIBCFG X.01-03
 
 StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
 
@@ -58,7 +58,9 @@ yaLIBCFG is a C library that reads configuration files into a **tree**, lets a p
 up and change the settings in the tree, and writes the tree back into the file.
 
 The files are written in the **libconfig syntax**: any file libconfig reads, yaLIBCFG reads
-into the same tree, and what yaLIBCFG writes, libconfig reads.
+into the same tree (section 2.2 tells the few numbers libconfig loses and yaLIBCFG keeps or
+refuses). The other way round there is no promise: yaLIBCFG takes forms of its own - the DCL
+radix `%X1F`, `0b`, `0o`, the `!` comment - and writes them back as they were written.
 
 ### 1.2 Why Not libconfig Itself
 
@@ -203,7 +205,8 @@ Within one group a name may appear only once.
 
 | Kind | Examples | Notes |
 |---|---|---|
-| Integer | `42`, `-17`, `0x1F`, `0b1011`, `0o755` | 32 bits. A leading `0` alone is NOT octal: `0027` is 27. |
+| Integer | `42`, `-17`, `0x1F`, `0b1011`, `0o755`, `0755` | 32 bits. A leading `0` makes it octal, as in libconfig: `0027` is 23, `09` is an error. |
+| Integer, the radix of DCL | `%X1F`, `%D27`, `%B1011`, `%O755`, `-%X10` | Hexadecimal, decimal, binary, octal; the letter in any case. `%D0027` is 27. |
 | 64-bit integer | `9223372036854775807L`, `0xFFFFFFFFFFL`, `5000000000` | The `L` (or `LL`) suffix, or a decimal number that does not fit 32 bits. |
 | Float | `0.75`, `1e-3`, `-2.5E+10`, `.5` | A double. There is no text for infinity or NaN. |
 | Boolean | `true`, `false`, `TRUE`, `False` | Any case. |
@@ -213,14 +216,35 @@ Within one group a name may appear only once.
 | List | `( "abc", 123, { x = 1; } )` | Values of any kind, groups and lists too. |
 
 A hexadecimal, binary or octal number without the `L` suffix that fits 32 bits as an
-unsigned number is a 32-bit integer with its sign bit: `0xFFFFFFFF` is -1. This is what
-libconfig does.
+unsigned number is a 32-bit integer with its sign bit: `0xFFFFFFFF` and `%XFFFFFFFF` are -1.
+This is what libconfig does.
+
+**libconfig files.** Every file libconfig (1.6 and later) reads, yaLIBCFG reads, its numbers
+as libconfig reads them - with its two odd rules for a leading `0`: with the `L` suffix the
+number is decimal (`0027L` is 27), and an octal number past 32 bits is a 64-bit one with no
+sign bit (`037777777777` is 4294967295). Where libconfig loses a number without a word,
+yaLIBCFG does not follow it:
+
+| Text | libconfig | yaLIBCFG |
+|---|---|---|
+| `0x100000000` (past 32 bits, no `L`) | cut to 32 bits: 0 | 64-bit 4294967296 |
+| `0x10000000000000000` (past 64 bits) | -1 | BADNUM |
+| `9223372036854775808L` (past 64 bits) | 9223372036854775807 | BADNUM |
+| `1e400` | infinity | BADNUM |
+| `.e5` | 0.0 | BADNUM |
+
+The other way round there is no promise: `0b`, `0o`, the `%` radix and the `!` comment
+are yaLIBCFG's own - libconfig refuses them.
+
+A number set by the program keeps the form of its text: `%X1F` set to 255 is written
+`%XFF`, `0027` set to 8 is written `010`.
 
 ### 2.3 Comments
 
 ```
 # to the end of the line
 // to the end of the line
+! to the end of the line, as in DCL
 /* anywhere,
    over lines */
 ```
@@ -1177,7 +1201,9 @@ Set the value of the node on the path. If the path names settings that are not t
 element (`[n]`, `[key=value]`) is never made - add it with CFG$ADD.
 
 The new text keeps the form of the old: a number written in hexadecimal stays hexadecimal, an
-integer that no longer fits 32 bits becomes 64-bit and gets the `L` suffix. A float is
+integer that no longer fits 32 bits becomes 64-bit and gets the `L` suffix - but an octal one
+with a leading `0` does not: the `L` would make it decimal, and past 32 bits it is 64-bit
+anyway. A float is
 written with the fewest digits that read back as the same double. A string is quoted and
 escaped.
 
@@ -1331,11 +1357,12 @@ unsigned cfg$set_value (CFG$NODE *a_base, const char *a_path, const char *a_text
 **Description**
 
 Sets a scalar from its text as it is written in a file - for a program that has the value as
-text, a command line for one (CFGTOOL SET). `9216`, `0x1F`, `12L`, `1.5`, `true`,
+text, a command line for one (CFGTOOL SET). `9216`, `0x1F`, `%X1F`, `0755` (octal), `12L`, `1.5`, `true`,
 `"text"` give their types; any text that is not exactly one such value (`10.0.0.5`, `12abc`,
-`1 2`, `12 # note`, an empty one) is set as a string. A setting that is there already keeps
+`1 2`, `12 # note`, `09`, an empty one) is set as a string. A setting that is there already keeps
 its type where the text allows: a string takes the text as it is, a float takes an integer.
-An integer keeps the form of its text: hexadecimal stays hexadecimal, `L` makes it 64-bit.
+An integer takes the form of the new text: `%XFF` is written `%XFF`, `8` is written `8` even
+where the old value was `010`; `L` makes it 64-bit.
 
 **Condition Values Returned** - as CFG$SET_*.
 
@@ -1673,9 +1700,9 @@ Sets the value and writes the file back in place (CFG$WRITE): only the value cha
 comments and the layout stay. A setting that is not there is made with the groups on its path.
 
 With `/TYPE=AUTO`, the default, the type comes from the text as in a file (CFG$SET_VALUE):
-`1500` is an integer, `0x1F` a hexadecimal one (written back in hexadecimal), `12L` a 64-bit
-one, `1.5` a float, `true` a boolean, `"text"` a string. Whatever is not exactly one such
-value - `10.0.0.5`, `12abc`, `12 # note` - is a string, as it stands. A setting that is there
+`1500` is an integer, `0x1F` or `%X1F` a hexadecimal one (written back so), `0755` an octal
+one (493), `12L` a 64-bit one, `1.5` a float, `true` a boolean, `"text"` a string. Whatever is not exactly one such
+value - `10.0.0.5`, `12abc`, `12 # note`, `09` - is a string, as it stands. A setting that is there
 already keeps its type where the text allows: a string takes the text as it is (`12` stays the
 string "12"), a float takes an integer (`2` becomes 2.0). `/TYPE=STRING` sets the text as a
 string always.

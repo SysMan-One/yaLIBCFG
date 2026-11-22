@@ -136,6 +136,17 @@ if(NOT GOT STREQUAL "a = 1;\nb = ;\nc = 4;\nd = $;\n")
 	message(FATAL_ERROR "set /skiperrors did not keep the bad settings:\n${GOT}")
 endif()
 
+#	The radix of DCL and a leading 0: read, set; SET takes the form of the new text
+file(WRITE ${WORK}/rdx.cfg "mask = %X1F;\numask = 0027;\n")
+RUN(0 "%X1F\n" get rdx.cfg mask)
+RUN(0 "027\n" get rdx.cfg umask)
+RUN(0 "" set rdx.cfg mask %XFF)
+RUN(0 "" set rdx.cfg umask 022)
+file(READ ${WORK}/rdx.cfg GOT)
+if(NOT GOT STREQUAL "mask = %XFF;\numask = 022;\n")
+	message(FATAL_ERROR "the radix forms were not kept:\n${GOT}")
+endif()
+
 #	HELP, errors of the command line
 RUN(0 IGNORE help)
 RUN(2 "" bogus)
