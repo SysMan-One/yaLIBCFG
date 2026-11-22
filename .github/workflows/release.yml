@@ -1,0 +1,408 @@
+#++
+#   DESCRIPTION: The signed GitHub Release of a yaLIBCFG version: .deb packages (amd64, arm64, armhf, mips, mipsel, mips64el), sources, SHA256SUMS
+#
+#   AUTHOR: StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+#
+#   CREATION DATE: 22-NOV-2026
+#
+#	A push of the tag that is the __YALIBCFGDEF_IDENT__ of include/yalibcfgdef.h (X.01-01,
+#	V.01-02ECO03; the package version follows it: X.01-01 -> 1.1.0, V.01-02ECO03 -> 1.2.3), or
+#	of v<VERSION> (v1.1.0: the version of that IDENT), builds the packages and attaches them,
+#	the sources tarball yalibcfg-<IDENT>.tar.gz (git archive of the tag, the top directory
+#	yalibcfg-<IDENT>/), SHA256SUMS and its minisign signature to the Release of that tag.
+#	X is a field test, V is a product version (the title of the Release says which).  The
+#	manual run (Actions -> release -> Run workflow) with the <tag> input does the same for an
+#	existing tag (the files of its Release are replaced); without it - only builds and tests
+#	the packages of the branch, see the run's artifacts.
+#
+#	Two packages for an architecture: libyalibcfg-dev (the static library, the headers, the CMake
+#	package; depends on libstarlet-dev >= 1.7) and cfgtool (the utility).  amd64 and arm64 are
+#	built on Debian 12 (glibc 2.36): StarLet is built from source there, packed by its own CPack
+#	and installed, then yaLIBCFG is built, tested (CTest) and packed.  The packages are installed
+#	on bookworm, trixie and noble together with libstarlet-dev, CFGTOOL is run and a consumer
+#	program is built with find_package(yaLIBCFG).  The StarLet package is only a test fixture:
+#	it is not attached to the Release (it comes from the Release of StarLet).
+#
+#	armhf, mips (big endian), mipsel and mips64el are cross builds on Debian 12 (bookworm has
+#	the cross compilers, also for mips; Debian 13 has no MIPS): CFGTOOL from the package is
+#	started under qemu-user (no image to install the package into).  They need only libc, so the
+#	missing libc6:mips is not a problem: dpkg-shlibdeps is off for them and the package depends
+#	on "libc6 (>= 2.34)" given explicitly (the binary is checked not to need a newer glibc).
+#
+#	The SHA256SUMS of everything is signed with minisign (the MINISIGN_KEY secret of this
+#	repository); the signature is checked with the public key written below.
+#
+#	MODIFICATION HISTORY:
+#
+#	22-NOV-2026	RRL	Initial revision.
+#--
+
+name: release
+
+on:
+  push:
+    tags: ['v*', 'V*', 'X.*']             # V* and X.* take the IDENT: V.aa-bb[ECOcc]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "An existing tag (X.01-01, V.01-02ECO03 or v1.1.0), equal to the IDENT of its tree, to build and release; empty - build only"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+env:
+  STARLET_REPO: "https://gitlab.com/SysMan-One/utility_routines.git"
+
+jobs:
+  meta:
+    name: the tag and the version
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      ident: ${{ steps.v.outputs.ident }}
+      ver: ${{ steps.v.outputs.ver }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - id: v
+        env:
+          TAG: ${{ inputs.tag || (github.ref_type == 'tag' && github.ref_name || '') }}
+        run: |
+          ident=$(sed -n 's/^#define[[:space:]]*__YALIBCFGDEF_IDENT__[[:space:]]*"\(.*\)"/\1/p' include/yalibcfgdef.h)
+          test -n "$ident" || { echo "::error::no __YALIBCFGDEF_IDENT__ in include/yalibcfgdef.h"; exit 1; }
+          # The IDENT is X.aa-bb[ECOcc] or V.aa-bb[ECOcc] (two digits each); the version is aa.bb.cc
+          # without the leading zeros (V.01-01ECO02 -> 1.1.2, X.01-01 -> 1.1.0), as CMakeLists.txt takes it.
+          re='^[XV]\.([0-9][0-9])-([0-9][0-9])(ECO([0-9][0-9]))?$'
+          [[ "$ident" =~ $re ]] || { echo "::error::the __YALIBCFGDEF_IDENT__ $ident is not of the form X.aa-bb[ECOcc] or V.aa-bb[ECOcc]"; exit 1; }
+          ver=$((10#${BASH_REMATCH[1]})).$((10#${BASH_REMATCH[2]})).$((10#${BASH_REMATCH[4]:-0}))
+          if [ -n "$TAG" ] && [ "$TAG" != "$ident" ] && [ "$TAG" != "v$ver" ]
+          then
+            echo "::error::the tag $TAG is neither the __YALIBCFGDEF_IDENT__ $ident of include/yalibcfgdef.h nor v$ver"
+            exit 1
+          fi
+          echo "IDENT $ident, version $ver, tag '$TAG'"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "ident=$ident" >> "$GITHUB_OUTPUT"
+          echo "ver=$ver" >> "$GITHUB_OUTPUT"
+
+  deb:
+    name: build ${{ matrix.arch }}
+    needs: meta
+    strategy:
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    container: debian:bookworm
+    env:
+      VER: ${{ needs.meta.outputs.ver }}
+      ARCH: ${{ matrix.arch }}
+    steps:
+      - name: Install prerequisites
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends build-essential cmake pkg-config \
+            libconfig-dev dpkg-dev file git ca-certificates
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Build StarLet, pack it (libstarlet-dev) and install the package
+        run: |
+          git clone --depth 1 "$STARLET_REPO" /tmp/starlet
+          git -C /tmp/starlet log -1 --format='StarLet: %H %cd'
+          cmake -S /tmp/starlet -B /tmp/starlet/build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+            -DCMAKE_INSTALL_PREFIX=/usr
+          cmake --build /tmp/starlet/build -j "$(nproc)"
+          (cd /tmp/starlet/build && cpack -G DEB)
+          mkdir starlet-deb
+          cp /tmp/starlet/build/libstarlet-dev_*.deb starlet-deb/
+          dpkg-deb --info starlet-deb/*.deb
+          apt-get install --yes ./starlet-deb/*.deb
+
+      - name: Build yaLIBCFG, test, package
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+          cmake --build build -j "$(nproc)"
+          ctest --test-dir build --output-on-failure
+          (cd build && cpack -G DEB)
+
+      - name: Check the packages
+        run: |
+          ls -l build/*.deb
+          for p in libyalibcfg-dev cfgtool
+          do
+            deb=$(ls build/"$p"_"$VER"[-_]*_"$ARCH".deb)
+            dpkg-deb --info "$deb"
+            dpkg-deb --contents "$deb"
+          done
+          dpkg-deb --contents build/libyalibcfg-dev_*.deb | grep -q '/libyalibcfg\.a$'
+          dpkg-deb --contents build/libyalibcfg-dev_*.deb | grep -q '/usr/include/yalibcfg\.h$'
+          dpkg-deb --contents build/libyalibcfg-dev_*.deb | grep -q '/cmake/yaLIBCFG/yaLIBCFGConfig\.cmake$'
+          dpkg-deb --contents build/cfgtool_*.deb | grep -q '/usr/bin/cfgtool$'
+          dpkg-deb --field build/libyalibcfg-dev_*.deb Depends | grep -q 'libstarlet-dev'
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: linux-${{ matrix.arch }}
+          path: build/*.deb
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: starlet-${{ matrix.arch }}
+          path: starlet-deb/*.deb
+          if-no-files-found: error
+
+  test:
+    name: test ${{ matrix.arch }} on ${{ matrix.distro }}
+    needs: deb
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        distro: ['debian:bookworm', 'debian:trixie', 'ubuntu:noble']
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.distro }}
+    env:
+      DEBIAN_FRONTEND: noninteractive
+    steps:
+      # linux-<arch> (yaLIBCFG) and starlet-<arch> (libstarlet-dev, to satisfy the dependency)
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: '*-${{ matrix.arch }}'
+          merge-multiple: true
+
+      - name: Install the packages, run CFGTOOL, build a consumer, remove the packages
+        run: |
+          ls -l *.deb
+          apt-get update
+          apt-get install --yes ./libstarlet-dev_*.deb ./libyalibcfg-dev_*.deb ./cfgtool_*.deb build-essential cmake
+          cat > sample.cfg <<'EOF'
+          # sample.cfg - for the install test
+          a = { b = 42; name = "edge-1"; };   # the answer
+          list = [ 1, 2, 3 ];
+          EOF
+          cfgtool check sample.cfg
+          test "$(cfgtool get sample.cfg a.b)" = 42
+          test "$(cfgtool get sample.cfg a.name)" = edge-1
+          # The summary is built into the image: it needs no help library
+          cfgtool help
+          if ldd /usr/bin/cfgtool 2>&1 | grep 'not found'; then exit 1; fi
+          mkdir c
+          cat > c/CMakeLists.txt <<'EOF'
+          cmake_minimum_required(VERSION 3.16)
+          project(c C)
+          find_package(yaLIBCFG REQUIRED)
+          add_executable(c c.c)
+          target_link_libraries(c PRIVATE yaLIBCFG::yalibcfg)
+          EOF
+          cat > c/c.c <<'EOF'
+          #include "yalibcfg.h"
+          int main (int argc, char **argv)
+          {
+          	CFG$TREE *tree; CFG$NODE *root; int32_t v = 0;
+          	cfg$inimsg();
+          	if ( !(cfg$parse_file(argv[1], 0, &tree) & 1) ) return 1;
+          	cfg$root(tree, &root);
+          	if ( !(cfg$get_int(root, "a.b", &v) & 1) || v != 42 ) return 2;
+          	cfg$free(tree);
+          	return 0;
+          }
+          EOF
+          cmake -S c -B c/build
+          cmake --build c/build
+          c/build/c sample.cfg
+          apt-get remove --yes cfgtool libyalibcfg-dev
+          test ! -e /usr/bin/cfgtool
+          # (a '!' in front would not stop the step: errexit ignores it)
+          if ls /usr/lib/*/libyalibcfg.a /usr/lib/libyalibcfg.a 2>/dev/null; then echo "::error::libyalibcfg.a left after the removal"; exit 1; fi
+
+  cross:
+    name: build ${{ matrix.arch }}
+    needs: meta
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: armhf,    triplet: arm-linux-gnueabihf,     qemu: arm,      proc: armv7l }
+          # Debian 12 has no libc6:mips, but the compiler and the C library for it (libc6-dev-mips-cross,
+          # libc6-mips-cross in /usr/mips-linux-gnu) are there: enough, we need only libc.
+          - { arch: mips,     triplet: mips-linux-gnu,          qemu: mips,     proc: mips }
+          - { arch: mipsel,   triplet: mipsel-linux-gnu,        qemu: mipsel,   proc: mipsel }
+          - { arch: mips64el, triplet: mips64el-linux-gnuabi64, qemu: mips64el, proc: mips64el }
+    runs-on: ubuntu-24.04
+    container: debian:bookworm
+    env:
+      VER: ${{ needs.meta.outputs.ver }}
+      ARCH: ${{ matrix.arch }}
+      TRIPLET: ${{ matrix.triplet }}
+      PROC: ${{ matrix.proc }}
+      EMULATOR: "qemu-${{ matrix.qemu }}-static;-L;/usr/${{ matrix.triplet }}"
+    steps:
+      - name: Install prerequisites
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends build-essential cmake pkg-config dpkg-dev file git ca-certificates \
+            crossbuild-essential-$ARCH qemu-user-static
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Build and install StarLet (cross)
+        run: |
+          git clone --depth 1 "$STARLET_REPO" /tmp/starlet
+          git -C /tmp/starlet log -1 --format='StarLet: %H %cd'
+          cmake -S /tmp/starlet -B /tmp/starlet/build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+            -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR="$PROC" -DCMAKE_C_COMPILER="$TRIPLET-gcc" \
+            -DCMAKE_INSTALL_PREFIX=/opt/cross
+          cmake --build /tmp/starlet/build -j "$(nproc)"
+          cmake --install /tmp/starlet/build
+
+      - name: Build yaLIBCFG (cross), test under qemu-user, package
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr \
+            -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR="$PROC" -DCMAKE_C_COMPILER="$TRIPLET-gcc" \
+            -DCMAKE_PREFIX_PATH=/opt/cross -DCMAKE_CROSSCOMPILING_EMULATOR="$EMULATOR"
+          cmake --build build -j "$(nproc)"
+          ctest --test-dir build --output-on-failure
+          # CMakeLists.txt turns shlibdeps of cfgtool on; there is no libc6:<arch> to look into, so it is
+          # off here and the dependency is given (the glibc of the binary is checked below).  The -D of
+          # cpack overrides the variables of CPackConfig.cmake.
+          (cd build && cpack -G DEB -D CPACK_DEBIAN_PACKAGE_ARCHITECTURE="$ARCH" \
+            -D CPACK_DEBIAN_TOOLS_PACKAGE_SHLIBDEPS=OFF -D CPACK_DEBIAN_TOOLS_PACKAGE_DEPENDS="libc6 (>= 2.34)")
+
+      - name: Check the packages and run CFGTOOL from the package under qemu-user
+        run: |
+          ls -l build/*.deb
+          for p in libyalibcfg-dev cfgtool
+          do
+            deb=$(ls build/"$p"_"$VER"[-_]*_"$ARCH".deb)
+            dpkg-deb --info "$deb"
+            dpkg-deb --contents "$deb"
+            test "$(dpkg-deb --field "$deb" Architecture)" = "$ARCH"
+          done
+          dpkg-deb --field build/libyalibcfg-dev_*.deb Depends | grep -q 'libstarlet-dev'
+          rm -rf pkgroot && mkdir pkgroot
+          dpkg-deb --extract build/cfgtool_*.deb pkgroot
+          bin=pkgroot/usr/bin/cfgtool
+          file "$bin"
+          # no symbol of a glibc newer than the one the package depends on
+          hi=$("$TRIPLET-objdump" -T "$bin" | grep -o 'GLIBC_[0-9][0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -n 1 || true)
+          echo "the newest glibc symbol version: '$hi'"
+          if [ -n "$hi" ] && [ "$(printf '%s\n' "$hi" 2.34 | sort -V | tail -n 1)" != 2.34 ]
+          then
+            echo "::error::cfgtool needs glibc $hi, the package says 2.34"; exit 1
+          fi
+          emu=$(echo "$EMULATOR" | tr ';' ' ')
+          fp=$($emu "$bin" check examples/router.cfg /fingerprint)
+          echo "fingerprint: $fp"
+          test "$fp" = "a0f0b155-8348-5765-97a7-4dfb5164faba"
+          test "$($emu "$bin" get examples/router.cfg 'ports.[id=9].mtu')" = 9216
+          $emu "$bin" help
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: linux-${{ matrix.arch }}
+          path: build/*.deb
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    needs: [meta, test, cross]
+    if: needs.meta.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          path: src
+
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: 'linux-*'
+          merge-multiple: true
+
+      - name: Collect the files and SHA256SUMS
+        env:
+          VER: ${{ needs.meta.outputs.ver }}
+          IDENT: ${{ needs.meta.outputs.ident }}
+        run: |
+          git -C src archive --format=tar.gz --prefix="yalibcfg-$IDENT/" -o "$PWD/yalibcfg-$IDENT.tar.gz" HEAD
+          tar tzf "yalibcfg-$IDENT.tar.gz" | grep -qx "yalibcfg-$IDENT/CMakeLists.txt"
+          ls -l *.deb *.tar.gz
+          # The tag must be the package version: two packages of each of the six architectures
+          for a in amd64 arm64 armhf mips mipsel mips64el
+          do
+            for p in libyalibcfg-dev cfgtool
+            do
+              test "$(ls "$p"_"$VER"[-_]*_"$a".deb | wc -l)" = 1 || { echo "::error::no $p of $VER for $a"; ls *.deb; exit 1; }
+            done
+          done
+          test "$(ls *.deb | wc -l)" = 12 || { echo "::error::not the 12 packages of $VER"; ls *.deb; exit 1; }
+          sha256sum *.deb *.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+          case "$IDENT" in
+            X.*) echo "TITLE=yaLIBCFG $VER (field test $IDENT)" >> "$GITHUB_ENV" ;;
+            *)   echo "TITLE=yaLIBCFG $VER ($IDENT)" >> "$GITHUB_ENV" ;;
+          esac
+
+      # One minisign signature over SHA256SUMS vouches for every file of the
+      # release.  The secret key is the MINISIGN_KEY secret of this repository
+      # (no password); it lives in the runner's temporary directory for this
+      # step only.  The signature is checked with the public key written below
+      # before anything is published.
+      - name: Sign SHA256SUMS
+        env:
+          MINISIGN_KEY: ${{ secrets.MINISIGN_KEY }}
+          TAG: ${{ needs.meta.outputs.tag }}
+        run: |
+          if [ -z "${MINISIGN_KEY}" ]
+          then
+            echo "::error::no MINISIGN_KEY secret - the release would go out unsigned"
+            exit 1
+          fi
+          sudo apt-get update -q && sudo apt-get install -y -q minisign
+          key="${RUNNER_TEMP}/minisign.key"
+          trap 'rm -f "${key}"' EXIT
+          ( umask 077; printf '%s\n' "${MINISIGN_KEY}" > "${key}" )
+          minisign -S -s "${key}" -m SHA256SUMS \
+            -t "yaLIBCFG ${TAG} SHA256SUMS signed $(date -u +%d-%b-%Y | tr a-z A-Z)"
+          # The key is pinned here, not read from src/: a re-run of an older tag has no minisign.pub.
+          minisign -Vm SHA256SUMS -P RWQl4NAqFsHKkNoHkS52WSZSk+2kb+e58DWYpoi/jVFa6TqOTAm3Ph14
+
+      - name: Attach the files to the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          VER: ${{ needs.meta.outputs.ver }}
+          IDENT: ${{ needs.meta.outputs.ident }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" *.deb *.tar.gz SHA256SUMS SHA256SUMS.minisig --clobber
+          else
+            gh release create "$TAG" *.deb *.tar.gz SHA256SUMS SHA256SUMS.minisig --title "$TITLE" --notes-file - <<EOF
+          yaLIBCFG $IDENT ($VER) - configuration trees in the libconfig syntax: lossless write-back, schema validation, comparison of two trees; with CFGTOOL, a command-line utility.
+
+          | File | What | Install |
+          |---|---|---|
+          | \`libyalibcfg-dev_${VER}_<arch>.deb\` | the static library, the headers, the CMake package (\`find_package(yaLIBCFG)\`), the manuals; depends on \`libstarlet-dev (>= 1.7)\` from the Release of StarLet | \`sudo apt install ./libstarlet-dev_*.deb ./libyalibcfg-dev_${VER}_<arch>.deb\` |
+          | \`cfgtool_${VER}_<arch>.deb\` | CFGTOOL: check, format, diff, get, set, delete | \`sudo apt install ./cfgtool_${VER}_<arch>.deb\` |
+          | \`yalibcfg-$IDENT.tar.gz\` | the sources (unpacks into \`yalibcfg-$IDENT/\`) | \`cmake -S . -B build -DCMAKE_PREFIX_PATH=<StarLet> && cmake --build build && ctest --test-dir build\` |
+
+          Architectures (deb): \`amd64 arm64 armhf mips mipsel mips64el\`. The packages for amd64 and arm64 are built on Debian 12 and tested on Debian 12, Debian 13 and Ubuntu 24.04 (any system with glibc >= 2.34 should do); those for armhf, mips, mipsel and mips64el are cross builds for glibc >= 2.34, CFGTOOL from them was started under qemu-user only.
+
+          To check a download: \`minisign -Vm SHA256SUMS -P RWQl4NAqFsHKkNoHkS52WSZSk+2kb+e58DWYpoi/jVFa6TqOTAm3Ph14\` (\`SHA256SUMS.minisig\` next to it), then \`sha256sum -c --ignore-missing SHA256SUMS\`.
+          EOF
+          fi

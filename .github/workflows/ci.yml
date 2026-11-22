@@ -1,0 +1,183 @@
+#++
+#   DESCRIPTION: The build and the tests of yaLIBCFG on every push: gcc (amd64, arm64), sanitizers, musl, cross builds under qemu-user
+#
+#   AUTHOR: StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+#
+#   CREATION DATE: 22-NOV-2026
+#
+#	A push, a pull request or a manual run (Actions -> ci -> Run workflow) builds StarLet (the
+#	utility_routines repository, branch master; installed to a prefix in the runner's temporary
+#	directory), then yaLIBCFG with its tests and runs ctest:
+#
+#	  gcc		Ubuntu 24.04 on x86_64 and aarch64; on x86_64 a second build under
+#			-fsanitize=address,undefined with leak detection on.  libconfig-dev is
+#			installed, so the comparison test with libconfig runs (8 tests).
+#	  musl		the same in an Alpine container (musl libc), x86_64 and aarch64.
+#	  cross		armhf, mips (big endian), mipsel and mips64el on Debian 12 with the cross
+#			compilers of crossbuild-essential; StarLet is cross-built the same way, the
+#			tests run under qemu-user (CMAKE_CROSSCOMPILING_EMULATOR).
+#
+#	The HELP package is not there, so the help libraries of CFGTOOL are not built; the tests
+#	"examples" and "cfgtool" start the programs from a cmake -P script, which is handed the
+#	emulator of the cross build (test/CMakeLists.txt) - all the tests run there too.  The
+#	comparison test with libconfig is off in the cross builds (no libconfig for the target).
+#
+#	MODIFICATION HISTORY:
+#
+#	22-NOV-2026	RRL	Initial revision.
+#--
+
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  STARLET_REPO: "https://gitlab.com/SysMan-One/utility_routines.git"
+
+jobs:
+  gcc:
+    name: gcc ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - name: Install prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends build-essential cmake pkg-config \
+            libconfig-dev git ca-certificates
+
+      - uses: actions/checkout@v5
+
+      - name: Build and install StarLet
+        run: |
+          git clone --depth 1 "$STARLET_REPO" "$RUNNER_TEMP/starlet-src"
+          git -C "$RUNNER_TEMP/starlet-src" log -1 --format='StarLet: %H %cd'
+          cmake -S "$RUNNER_TEMP/starlet-src" -B "$RUNNER_TEMP/starlet-build" -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/starlet"
+          cmake --build "$RUNNER_TEMP/starlet-build" -j "$(nproc)"
+          cmake --install "$RUNNER_TEMP/starlet-build"
+
+      - name: Build yaLIBCFG and run the tests (CMake / CTest)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/starlet"
+          cmake --build build -j "$(nproc)"
+          ctest --test-dir build --output-on-failure
+
+      - name: Build and run the tests under ASan / UBSan
+        if: matrix.arch == 'amd64'
+        env:
+          ASAN_OPTIONS: detect_leaks=1
+          UBSAN_OPTIONS: print_stacktrace=1
+        run: |
+          san="-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer"
+          cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/starlet" \
+            -DCMAKE_C_FLAGS="$san" -DCMAKE_EXE_LINKER_FLAGS="$san"
+          cmake --build build-asan -j "$(nproc)"
+          ctest --test-dir build-asan --output-on-failure
+
+  musl:
+    name: musl ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04,     arch_cflags: "" }
+          # The aarch64 libgcc.a of a glibc system calls glibc's __getauxval for the outline
+          # atomics (LSE), musl has no such symbol, so they are inlined here (as StarLet's CI does).
+          - { arch: arm64, runner: ubuntu-24.04-arm, arch_cflags: -mno-outline-atomics }
+    runs-on: ${{ matrix.runner }}
+    container: alpine:3
+    timeout-minutes: 20
+    env:
+      ARCH_CFLAGS: ${{ matrix.arch_cflags }}
+    steps:
+      - name: Install prerequisites
+        run: apk add --no-cache build-base cmake pkgconf libconfig-dev linux-headers git ca-certificates
+
+      - uses: actions/checkout@v5
+
+      - name: Build and install StarLet
+        run: |
+          git clone --depth 1 "$STARLET_REPO" "$RUNNER_TEMP/starlet-src"
+          git -C "$RUNNER_TEMP/starlet-src" log -1 --format='StarLet: %H %cd'
+          cmake -S "$RUNNER_TEMP/starlet-src" -B "$RUNNER_TEMP/starlet-build" -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=OFF -DCMAKE_C_FLAGS="$ARCH_CFLAGS" -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/starlet"
+          cmake --build "$RUNNER_TEMP/starlet-build" -j "$(nproc)"
+          cmake --install "$RUNNER_TEMP/starlet-build"
+
+      - name: Build yaLIBCFG and run the tests (CMake / CTest, musl)
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/starlet" \
+            -DCMAKE_C_FLAGS="$ARCH_CFLAGS"
+          cmake --build build -j "$(nproc)"
+          ctest --test-dir build --output-on-failure
+
+  cross:
+    name: cross ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: armhf,    triplet: arm-linux-gnueabihf,     qemu: arm,      proc: armv7l }
+          # Debian 12 has no libc6:mips to install, but the cross compiler and the C library for it
+          # (libc6-dev-mips-cross, libc6-mips-cross in /usr/mips-linux-gnu) are there: enough for a
+          # program that needs only libc, as StarLet and yaLIBCFG are.
+          - { arch: mips,     triplet: mips-linux-gnu,          qemu: mips,     proc: mips }
+          - { arch: mipsel,   triplet: mipsel-linux-gnu,        qemu: mipsel,   proc: mipsel }
+          - { arch: mips64el, triplet: mips64el-linux-gnuabi64, qemu: mips64el, proc: mips64el }
+    runs-on: ubuntu-24.04
+    container: debian:bookworm
+    timeout-minutes: 30
+    env:
+      ARCH: ${{ matrix.arch }}
+      TRIPLET: ${{ matrix.triplet }}
+      PROC: ${{ matrix.proc }}
+      EMULATOR: "qemu-${{ matrix.qemu }}-static;-L;/usr/${{ matrix.triplet }}"
+    steps:
+      - name: Install prerequisites
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends build-essential cmake pkg-config file git ca-certificates \
+            crossbuild-essential-$ARCH qemu-user-static
+
+      - uses: actions/checkout@v5
+
+      - name: Build and install StarLet (cross)
+        run: |
+          git clone --depth 1 "$STARLET_REPO" /tmp/starlet
+          git -C /tmp/starlet log -1 --format='StarLet: %H %cd'
+          cmake -S /tmp/starlet -B /tmp/starlet/build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF \
+            -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR="$PROC" -DCMAKE_C_COMPILER="$TRIPLET-gcc" \
+            -DCMAKE_INSTALL_PREFIX=/opt/cross
+          cmake --build /tmp/starlet/build -j "$(nproc)"
+          cmake --install /tmp/starlet/build
+
+      - name: Build yaLIBCFG (cross) and run the tests under qemu-user
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_SYSTEM_PROCESSOR="$PROC" -DCMAKE_C_COMPILER="$TRIPLET-gcc" \
+            -DCMAKE_PREFIX_PATH=/opt/cross -DCMAKE_CROSSCOMPILING_EMULATOR="$EMULATOR"
+          cmake --build build -j "$(nproc)"
+          file build/cfgtool
+          ctest --test-dir build --output-on-failure
+
+      - name: Run CFGTOOL and an example under qemu-user
+        run: |
+          emu=$(echo "$EMULATOR" | tr ';' ' ')
+          fp=$($emu build/cfgtool check examples/router.cfg /fingerprint)
+          echo "fingerprint: $fp"
+          test "$fp" = "a0f0b155-8348-5765-97a7-4dfb5164faba"
+          test "$($emu build/cfgtool get examples/router.cfg 'ports.[id=9].mtu')" = 9216
+          $emu build/ex1_read examples/router.cfg | grep -q '^hostname: edge-1$'

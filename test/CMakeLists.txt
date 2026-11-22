@@ -49,11 +49,18 @@ else()
 endif()
 
 #
+#	The scripts below start programs themselves: a cross build hands them its emulator
+#	(qemu-<arch>-static and its arguments), joined by '|' - a ';' would split the -D
+#
+string(REPLACE ";" "|" YALIBCFG_K_EMU "${CMAKE_CROSSCOMPILING_EMULATOR}")
+
+#
 #	The examples of the manual, on a copy of the sample file, against the expected output
 #
 if(YALIBCFG_M_EXAMPLES)
 	add_test(NAME examples COMMAND ${CMAKE_COMMAND}
 		-DEXDIR=${CMAKE_BINARY_DIR} -DSRCDIR=${CMAKE_SOURCE_DIR}/examples -DWORK=${CMAKE_CURRENT_BINARY_DIR}/ex-work
+		"-DEMU=${YALIBCFG_K_EMU}"
 		-P ${CMAKE_CURRENT_SOURCE_DIR}/examples.cmake)
 endif()
 
@@ -62,4 +69,5 @@ endif()
 #
 add_test(NAME cfgtool COMMAND ${CMAKE_COMMAND}
 	-DTOOL=$<TARGET_FILE:cfgtool> -DSRCDIR=${CMAKE_SOURCE_DIR}/examples -DWORK=${CMAKE_CURRENT_BINARY_DIR}/cfgtool-work
+	"-DEMU=${YALIBCFG_K_EMU}"
 	-P ${CMAKE_CURRENT_SOURCE_DIR}/cfgtool.cmake)

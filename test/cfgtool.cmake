@@ -2,13 +2,16 @@
 #	CFGTOOL: every command on copies of the sample files, the output and the exit status
 #	checked.  Run by ctest as cmake -DTOOL=... -DSRCDIR=... -DWORK=... -P cfgtool.cmake
 #
+#	A cross build: the emulator to start the program with ('|'-joined, see CMakeLists.txt)
+string(REPLACE "|" ";" EMU "${EMU}")
+
 file(REMOVE_RECURSE ${WORK})
 file(MAKE_DIRECTORY ${WORK})
 file(COPY ${SRCDIR}/router.cfg ${SRCDIR}/router-new.cfg ${SRCDIR}/router-bad.cfg DESTINATION ${WORK})
 
 #	RUN(<want exit> <want stdout or IGNORE> <args...>)
 function(RUN WANTRC WANTOUT)
-	execute_process(COMMAND ${TOOL} ${ARGN} WORKING_DIRECTORY ${WORK}
+	execute_process(COMMAND ${EMU} ${TOOL} ${ARGN} WORKING_DIRECTORY ${WORK}
 		OUTPUT_VARIABLE OUT ERROR_VARIABLE ERR RESULT_VARIABLE RC)
 
 	if(NOT RC EQUAL WANTRC)

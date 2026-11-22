@@ -20,13 +20,14 @@ you do, a lot here will look familiar.
 
 ### Document Structure
 
-This manual has two parts and four appendixes.
+This manual has three parts and four appendixes.
 
 * **Part I, Concepts and Tutorial**, tells what the library is for, how a configuration file is
   written, and how a program reads and changes one. Read it from the start.
 * **Part II, Reference**, describes every routine in the same order of headings: Format,
   Returns, Arguments, Description, Condition Values Returned, Example. Use it when you write
   code.
+* **Part III, The CFGTOOL Utility**, describes the command-line utility of the library.
 * **Appendix A** lists the messages, with what each one means and what to do.
 * **Appendix B** lists the limits of the library.
 * **Appendix C** lists the differences from libconfig.
@@ -1445,6 +1446,144 @@ Frees the comparison and its paths. The trees are not touched. NULL is accepted.
 
 ---
 
+# Part III. The CFGTOOL Utility
+
+CFGTOOL is the command-line utility of the library: it checks, formats, compares, reads and
+changes configuration files from the shell and from scripts, with a DCL-style command line.
+It is in the package `cfgtool`; `HELP CFGTOOL` shows its help library (the HELP package).
+
+## CFGTOOL -- Format
+
+```
+CFGTOOL command parameters [/qualifiers]
+```
+
+| Command | What it does |
+|---|---|
+| CHECK file | Checks a file; tells its fingerprint |
+| FORMAT file | Writes the settings in the canonical form |
+| DIFF old-file new-file | Compares two configurations, writes the listing |
+| GET file path | Writes the value of a setting |
+| SET file path value | Changes a setting, writes the file back with its comments |
+| DELETE file path | Deletes a setting, writes the file back |
+| HELP | The summary of the commands |
+
+A command and a qualifier may be abbreviated while the abbreviation is unambiguous; a
+qualifier may be written in the Unix long form, `--fingerprint` for `/FINGERPRINT`.
+`CFGTOOL command /HELP` lists the parameters and qualifiers of a command.
+
+Messages go to the standard error, through `$PUTMSG_FAO`; data - a value, a listing, a text, a
+fingerprint - to the standard output. The **exit status**:
+
+| Status | Meaning |
+|---|---|
+| 0 | Success; for DIFF - no differences |
+| 1 | DIFF found differences |
+| 2 | An error |
+
+A path is written as in the library (section 3.3): `system.hostname`, `vlans.[1]`,
+`ports.[id=9].mtu`. Quote it against the shell when it holds brackets or blanks.
+
+Qualifiers that several commands take:
+
+| Qualifier | Meaning |
+|---|---|
+| /NOCASE | Names of settings are compared regardless of case (CFG$M_NOCASE) |
+| /NOINCLUDE | An `@include` is an error (CFG$M_NOINCLUDE) |
+| /OUTPUT=file | Data goes into the file, not to the standard output |
+| /LOG | SET and DELETE report what they did |
+
+## CHECK -- Check a File
+
+```
+CFGTOOL CHECK file [/FINGERPRINT /NOCASE /NOINCLUDE]
+```
+
+Parses the file with the files it includes. A correct file is announced with the number of its
+settings and its fingerprint (section 3.6); every error - with the file, the line and the
+column. `/FINGERPRINT` writes the fingerprint alone to the standard output, for a script.
+
+```
+$ cfgtool check router.cfg
+%CFG-S-CORRECT, router.cfg is correct: 16 settings, UUID a0f0b155-8348-5765-97a7-4dfb5164faba
+
+$ id=$(cfgtool check router.cfg /fingerprint 2>/dev/null)
+```
+
+## FORMAT -- Write the Canonical Form
+
+```
+CFGTOOL FORMAT file [/OUTPUT=file /NOCASE /NOINCLUDE]
+```
+
+Writes the settings of the file in the canonical layout (CFG$WRITE_CANONICAL): one setting on a
+line, groups over lines with a tab of indentation, the settings of included files in place of
+the `@include` lines. **The comments are not kept** - this is the text of the settings alone,
+for comparing files as texts or for giving a file a clean look. The canonical text has the same
+fingerprint as the file.
+
+## DIFF -- Compare Two Configurations
+
+```
+CFGTOOL DIFF old-file new-file [/OUTPUT=file /POSITIONAL /NOTIME /NOCASE]
+```
+
+Compares the settings (CFG$DIFF) and writes the listing of section 4.5 (CFG$DIFF_LISTING).
+`/POSITIONAL` matches the elements of lists by position only, `/NOTIME` leaves the times out
+of the listing. The exit status is 1 when there are differences, so a script can ask:
+
+```
+$ if ! cfgtool diff running.cfg saved.cfg /notime /output=changes.lis ; then
+>     echo "the configuration has changed, see changes.lis"
+> fi
+```
+
+## GET -- Read a Setting
+
+```
+CFGTOOL GET file path [/FLAT /NOCASE]
+```
+
+Writes the value: a string as it is (escapes resolved, no quotes), another scalar as in a file,
+a group or a list over lines - or on one line with `/FLAT`.
+
+```
+$ cfgtool get router.cfg ports.[id=9].mtu
+9216
+$ cfgtool get router.cfg system /flat
+{ hostname = "edge-1"; location = "Lab, rack 3"; }
+```
+
+## SET -- Change a Setting
+
+```
+CFGTOOL SET file path value [/TYPE={AUTO|STRING} /OUTPUT=file /LOG /NOCASE]
+```
+
+Sets the value and writes the file back in place (CFG$WRITE): only the value changes, the
+comments and the layout stay. A setting that is not there is made with the groups on its path.
+
+With `/TYPE=AUTO`, the default, the type comes from the text as in a file (CFG$SET_VALUE):
+`1500` is an integer, `0x1F` a hexadecimal one (written back in hexadecimal), `1.5` a float,
+`true` a boolean, anything else a string. `/TYPE=STRING` sets the text as a string always.
+`/OUTPUT` writes the changed main file elsewhere and leaves the original as it was.
+
+```
+$ cfgtool set router.cfg ports.[id=9].mtu 1500
+$ cfgtool set router.cfg system.snmp.community public /log
+%CFG-S-MODIFIED, system.snmp.community set in router.cfg
+```
+
+## DELETE -- Delete a Setting
+
+```
+CFGTOOL DELETE file path [/OUTPUT=file /LOG /NOCASE]
+```
+
+Deletes the setting with the comment lines above it (CFG$DELETE) and writes the file back.
+
+---
+
 # Appendix A. Messages
 
 Every message has the form `%CFG-s-IDENT, text`, where *s* is the severity: S - success,
@@ -1598,6 +1737,34 @@ the spelling.
 *Explanation:* The value is of another type than the schema wants; what is inside it is not
 checked. *User Action:* Correct the value: a string in quotes, a boolean as `true` or
 `false`, a group in braces.
+
+The messages of CFGTOOL:
+
+**CANTSET, cannot change** *path* **in** *file*
+*Explanation:* SET or DELETE was refused; the next message says why (TYPE, BADNAME, NOTFOUND).
+*User Action:* As the next message says. An element of a list is never made by SET.
+
+**CORRECT,** *file* **is correct:** *n* **settings, UUID** *uuid*
+*Explanation:* CHECK found the file correct.
+
+**DELETED,** *path* **deleted from** *file*
+*Explanation:* DELETE /LOG did it.
+
+**DIFFERENT,** *n* **differences between** *old* **and** *new*
+*Explanation:* DIFF found differences; the exit status is 1.
+
+**IDENTICAL, no differences between** *old* **and** *new*
+*Explanation:* DIFF found none.
+
+**MODIFIED,** *path* **set in** *file*
+*Explanation:* SET /LOG did it.
+
+**NOSETTING, no setting** *path* **in** *file*
+*Explanation:* GET or DELETE found nothing on the path. *User Action:* Check the path: GET the
+group above it.
+
+**OPENOUT, cannot create** *file*, **errno=** *n*
+*Explanation:* The file of /OUTPUT cannot be created. *User Action:* As the errno says.
 
 ---
 

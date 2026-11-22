@@ -1,3 +1,6 @@
+#	A cross build: the emulator to start the programs with ('|'-joined, see CMakeLists.txt)
+string(REPLACE "|" ";" EMU "${EMU}")
+
 #
 #	Run the examples of the manual on a copy of examples/router.cfg and compare what they
 #	print and what they write with examples/expected/*.
@@ -7,7 +10,7 @@ file(MAKE_DIRECTORY ${WORK})
 
 foreach(EX ex1_read ex3_walk ex4_list ex2_edit)
 	file(COPY ${SRCDIR}/router.cfg DESTINATION ${WORK})
-	execute_process(COMMAND ${EXDIR}/${EX} ${WORK}/router.cfg OUTPUT_VARIABLE OUT ERROR_VARIABLE ERR RESULT_VARIABLE RC)
+	execute_process(COMMAND ${EMU} ${EXDIR}/${EX} ${WORK}/router.cfg OUTPUT_VARIABLE OUT ERROR_VARIABLE ERR RESULT_VARIABLE RC)
 
 	if(NOT RC EQUAL 0)
 		message(FATAL_ERROR "${EX}: exit ${RC}\n${ERR}")
@@ -25,7 +28,7 @@ foreach(EX ex1_read ex3_walk ex4_list ex2_edit)
 endforeach()
 
 #	ex5_diff: run in the directory of the examples, with relative names, without times
-execute_process(COMMAND ${EXDIR}/ex5_diff router.cfg router-new.cfg notime WORKING_DIRECTORY ${SRCDIR}
+execute_process(COMMAND ${EMU} ${EXDIR}/ex5_diff router.cfg router-new.cfg notime WORKING_DIRECTORY ${SRCDIR}
 	OUTPUT_VARIABLE OUT ERROR_VARIABLE ERR RESULT_VARIABLE RC)
 
 if(NOT RC EQUAL 1)
@@ -43,7 +46,7 @@ endif()
 foreach(PAIR "router.cfg;0" "router-bad.cfg;1")
 	list(GET PAIR 0 F)
 	list(GET PAIR 1 WANTRC)
-	execute_process(COMMAND ${EXDIR}/ex6_schema ${F} WORKING_DIRECTORY ${SRCDIR}
+	execute_process(COMMAND ${EMU} ${EXDIR}/ex6_schema ${F} WORKING_DIRECTORY ${SRCDIR}
 		OUTPUT_VARIABLE OUT ERROR_VARIABLE ERR RESULT_VARIABLE RC)
 
 	if(NOT RC EQUAL WANTRC)
