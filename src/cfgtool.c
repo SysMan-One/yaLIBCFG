@@ -24,8 +24,13 @@
 **		    CFGTOOL HELP
 **
 **		Messages go to the standard error, through $PUTMSG_FAO; data - a value, a
-**		listing, a canonical text, a fingerprint - to the standard output (or /OUTPUT).
-**		SET and DELETE write the file back in place, keeping its comments and layout.
+**		listing, a canonical text, a fingerprint - to the standard output (or /OUTPUT,
+**		written through a temporary file and a rename).  SET and DELETE write the file
+**		back in place, keeping its comments and layout.
+**
+**		An argument is at most 255 octets (CLI_ROUTINES keeps a value in an ASC); a
+**		value or a path that begins with '/' or '--' is taken for a qualifier unless it
+**		is put in double quotes: '"/var/log"'.
 **
 **		The exit status for the shell: 0 - success (DIFF: no differences), 1 - DIFF found
 **		differences, 2 - an error.
@@ -48,6 +53,8 @@
 #include	<errno.h>
 #include	<fcntl.h>
 #include	<unistd.h>
+#include	<limits.h>
+#include	<sys/stat.h>
 
 #include	"yalibcfg.h"
 #include	"cli_routines.h"
@@ -251,7 +258,31 @@ ssize_t		l_rc;
 
 
 /*
+**  DESCRIPTION: Put out a condition value a routine of the library returned.  The messages that
+**		carry a text or a position are put out by CFG$PUTERRS from the record of the tree;
+**		here only those that need no parameters.
+*/
+static void	s_putsts	(
+		unsigned	a_sts
+			)
+{
+	switch ( a_sts )
+		{
+		case CFG$_NOTFOUND:	case CFG$_BADPATH:	case CFG$_TYPE:		case CFG$_EXISTS:
+		case CFG$_BADNAME:	case CFG$_BADARG:	case CFG$_NOMEM:	case CFG$_BROKEN:
+		case CFG$_INCMODIFIED:	case CFG$_BADSCHEMA:	case CFG$_INVALID:
+			$PUTMSG_FAO(a_sts);
+			break;
+		}
+}
+
+
+
+/*
 **  DESCRIPTION: Put data out: into the file of /OUTPUT when given, else to the standard output.
+**		A file is written the safe way: a temporary file beside it, then a rename - an old
+**		file is never left half written; a symbolic link is followed; the mode of an old
+**		file is kept.
 **
 **  RETURNS:
 **	STS$K_SUCCESS, CFG$_OPENOUT, CFG$_WRITERR (put out)
@@ -263,20 +294,45 @@ static unsigned	s_output	(
 		uint32_t	a_len
 			)
 {
+static	const char	s_sfx[] = ".cfgtool-XXXXXX";
 CFGTOOL$ARG	l_out;
+char		l_real[PATH_MAX], l_tmp[PATH_MAX + sizeof(s_sfx)];
+const	char	*l_name;
+struct stat	l_st;
 int		l_fd;
 unsigned	l_sts;
 
-	if ( !a_qout || !s_present(a_ctx, a_qout) || !(1 & s_arg(a_ctx, a_qout, &l_out)) )
+	if ( !a_qout || !s_present(a_ctx, a_qout) )
 		return	s_write(STDOUT_FILENO, a_buf, a_len, "SYS$OUTPUT");
 
-	if ( 0 > (l_fd = open(l_out.str, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644)) )
+	if ( !(1 & s_arg(a_ctx, a_qout, &l_out)) || !l_out.len )
+		return	$PUTMSG_FAO(CFG$_OPENOUT, "(no file named by /OUTPUT)", EINVAL);
+
+	l_name = realpath(l_out.str, l_real) ? l_real : l_out.str;
+
+	memcpy(l_tmp, l_name, strlen(l_name));
+	memcpy(l_tmp + strlen(l_name), s_sfx, sizeof(s_sfx));
+
+	if ( 0 > (l_fd = mkostemp(l_tmp, O_CLOEXEC)) )
 		return	$PUTMSG_FAO(CFG$_OPENOUT, l_out.str, errno);
+
+	fchmod(l_fd, stat(l_name, &l_st) ? 0644 : (l_st.st_mode & 07777));
 
 	l_sts = s_write(l_fd, a_buf, a_len, l_out.str);
 
-	if ( close(l_fd) && (1 & l_sts) )
+	if ( (1 & l_sts) && (fsync(l_fd) || close(l_fd)) )
+		{
+		l_fd = -1;
 		l_sts = $PUTMSG_FAO(CFG$_WRITERR, strlen(l_out.str), l_out.str, errno);
+		}
+	else if ( !(1 & l_sts) )
+		close(l_fd);
+
+	if ( (1 & l_sts) && rename(l_tmp, l_name) )
+		l_sts = $PUTMSG_FAO(CFG$_WRITERR, strlen(l_out.str), l_out.str, errno);
+
+	if ( !(1 & l_sts) )
+		unlink(l_tmp);
 
 	return	l_sts;
 }
@@ -423,7 +479,7 @@ unsigned	l_sts;
 		l_sts = s_output(a_ctx, &s_format_q[2], l_text, l_len);
 		free(l_text);
 		}
-	else	$PUTMSG_FAO(l_sts);
+	else	s_putsts(l_sts);
 
 	cfg$free(l_tree);
 
@@ -463,7 +519,7 @@ unsigned	l_sts;
 
 	if ( !(1 & (l_sts = cfg$diff(l_told, l_tnew, NULL, s_present(a_ctx, &s_diff_q[2]) ? CFG$M_POSITIONAL : 0, &l_diff))) )
 		{
-		$PUTMSG_FAO(l_sts);
+		s_putsts(l_sts);
 		goto	l_done;
 		}
 
@@ -471,7 +527,7 @@ unsigned	l_sts;
 
 	if ( !(1 & (l_sts = cfg$diff_listing(l_diff, s_present(a_ctx, &s_diff_q[3]) ? CFG$M_NOTIME : 0, &l_text, &l_len))) )
 		{
-		$PUTMSG_FAO(l_sts);
+		s_putsts(l_sts);
 		goto	l_done;
 		}
 
@@ -539,7 +595,7 @@ unsigned	l_sts;
 
 	if ( !(1 & (l_sts = cfg$node_text(l_node, s_present(a_ctx, &s_get_q[1]) ? CFG$M_TEXT_FLAT : 0, &l_text, &l_len))) )
 		{
-		$PUTMSG_FAO(l_sts);
+		s_putsts(l_sts);
 		goto	l_done;
 		}
 
@@ -575,7 +631,10 @@ unsigned	l_sts;
 	else	l_sts = cfg$write(a_tree);
 
 	if ( !(1 & l_sts) )
-		cfg$puterrs(a_tree);
+		{
+		s_putsts(l_sts);			/* INCMODIFIED, NOMEM ...			*/
+		cfg$puterrs(a_tree);			/* WRITERR, with the file and errno		*/
+		}
 
 	return	l_sts;
 }
@@ -614,7 +673,7 @@ unsigned	l_sts;
 	if ( !(1 & l_sts) )
 		{
 		$PUTMSG_FAO(CFG$_CANTSET, l_path.str, l_file.str);
-		$PUTMSG_FAO(l_sts);
+		s_putsts(l_sts);
 		goto	l_done;
 		}
 
@@ -661,6 +720,7 @@ unsigned	l_sts;
 	if ( !(1 & (l_sts = cfg$delete(l_node))) )
 		{
 		$PUTMSG_FAO(CFG$_CANTSET, l_path.str, l_file.str);
+		s_putsts(l_sts);			/* why: BADARG - the root, an @include		*/
 		goto	l_done;
 		}
 
@@ -718,6 +778,14 @@ unsigned	l_sts;
 
 	__util$setlogfd(STDERR_FILENO);
 	cfg$inimsg();
+
+	/* CLI_ROUTINES keeps a value in an ASC: a longer one would be cut without a word */
+	for ( int i = 1; i < argc; i++ )
+		if ( strlen(argv[i]) > ASC$K_SZ )
+			{
+			$PUTMSG_FAO(CFG$_ARGLONG, i, ASC$K_SZ);
+			return	CFGTOOL$K_EXIT_ERROR;
+			}
 
 	l_sts = (unsigned) __cli$parse(s_verbs, CLI$M_OPSIGNAL, argc - 1, argv + 1, &l_ctx);
 

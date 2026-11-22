@@ -83,6 +83,45 @@ RUN(0 "" set orig/router.cfg system.hostname edge-2 /output=out.cfg)
 RUN(0 "edge-1\n" get orig/router.cfg system.hostname)
 RUN(0 "edge-2\n" get out.cfg system.hostname)
 
+#	SET /TYPE=AUTO: what is not exactly one scalar is a string; a setting keeps its type
+RUN(0 "" set router.cfg syslog 10.0.0.5)
+RUN(0 "10.0.0.5\n" get router.cfg syslog)
+RUN(0 "" set router.cfg note "12 # not a comment")
+RUN(0 "12 # not a comment\n" get router.cfg note)
+RUN(0 "" set router.cfg big 12L)
+RUN(0 "12L\n" get router.cfg big)
+file(WRITE ${WORK}/t.cfg "f = 1.5;\ns = \"x\";\np = ( { id = 9; } );\n")
+RUN(0 "" set t.cfg f 2)
+RUN(0 "2.0\n" get t.cfg f)
+RUN(0 "" set t.cfg s 12)
+RUN(0 "12\n" get t.cfg s)
+RUN(0 "" set t.cfg p.[id=9].id 0x20)
+RUN(0 "0x20\n" get t.cfg p.[0].id)
+
+#	/OUTPUT refuses a change in an included file - it would be lost
+file(WRITE ${WORK}/m.cfg "x = 1;\n@include \"inc.cfg\"\n")
+file(WRITE ${WORK}/inc.cfg "inc_a = 5;\n")
+RUN(2 "" set m.cfg inc_a 6 /output=m-out.cfg)
+if(EXISTS ${WORK}/m-out.cfg)
+	message(FATAL_ERROR "set /output wrote a file that lost the change of inc.cfg")
+endif()
+RUN(0 "" set m.cfg inc_a 6)
+RUN(0 "6\n" get m.cfg inc_a)
+
+#	In place through a symbolic link: the link stays, its target changes
+file(CREATE_LINK ${WORK}/t.cfg ${WORK}/link.cfg SYMBOLIC)
+RUN(0 "" set link.cfg z 1)
+RUN(0 "1\n" get t.cfg z)
+if(NOT IS_SYMLINK ${WORK}/link.cfg)
+	message(FATAL_ERROR "set through a symbolic link replaced the link")
+endif()
+
+#	DELETE of the root is refused with its reason; an argument over 255 octets is refused
+RUN(2 "" delete t.cfg "")
+string(REPEAT "a" 300 LONG)
+RUN(2 "" set t.cfg q ${LONG})
+RUN(2 "" format t.cfg /output=)
+
 #	HELP, errors of the command line
 RUN(0 IGNORE help)
 RUN(2 "" bogus)

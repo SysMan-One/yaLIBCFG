@@ -1247,8 +1247,9 @@ unsigned cfg$write (CFG$TREE *a_tree);
 
 For every source of the tree, builds its text; if the text differs from what was read, writes
 it into the file in its place - a temporary file `<name>.yalibcfg-XXXXXX` in the same
-directory, synced, renamed over the old file, the mode of the old file kept. A file that did
-not change is not touched.
+directory, synced, renamed over the old file. The mode and the owner of the old file are kept
+(the owner as far as the process may change it); a symbolic link is followed - the link stays,
+the file it points to is replaced. A file that did not change is not touched.
 
 **Condition Values Returned**
 
@@ -1272,7 +1273,67 @@ unsigned cfg$write_file (CFG$TREE *a_tree, const char *a_path);
 **Description**
 
 Writes the text of the main source into `a_path`, the same safe way as CFG$WRITE. The
-`@include` directives are written as they are; the included files are not copied.
+`@include` directives are written as they are; the included files are not copied. When an
+included file has changed, the call is refused with CFG$_INCMODIFIED: that change would go
+nowhere - write it in place with CFG$WRITE.
+
+---
+
+## CFG$SET_VALUE - Write a Value from Its Text
+
+**Format**
+
+```c
+unsigned cfg$set_value (CFG$NODE *a_base, const char *a_path, const char *a_text, uint32_t a_len);
+```
+
+**Description**
+
+Sets a scalar from its text as it is written in a file - for a program that has the value as
+text, a command line for one (CFGTOOL SET). `9216`, `0x1F`, `12L`, `1.5`, `true`,
+`"text"` give their types; any text that is not exactly one such value (`10.0.0.5`, `12abc`,
+`1 2`, `12 # note`, an empty one) is set as a string. A setting that is there already keeps
+its type where the text allows: a string takes the text as it is, a float takes an integer.
+An integer keeps the form of its text: hexadecimal stays hexadecimal, `L` makes it 64-bit.
+
+**Condition Values Returned** - as CFG$SET_*.
+
+---
+
+## CFG$NODE_TEXT - Get the Text of a Node
+
+**Format**
+
+```c
+unsigned cfg$node_text (CFG$NODE *a_node, uint32_t a_opts, char **a_buf, uint32_t *a_len);
+```
+
+**Description**
+
+Gives the canonical text of a node in a new buffer (free it with `free()`): the value, or with
+CFG$M_TEXT_NAME `name = value;`; a group or a list over lines with a tab of indentation, or on
+one line with CFG$M_TEXT_FLAT.
+
+**Condition Values Returned** - STS$K_SUCCESS, CFG$_NOMEM, CFG$_BADARG (a removed node).
+
+---
+
+## CFG$WRITE_CANONICAL - Get the Canonical Text of a Tree
+
+**Format**
+
+```c
+unsigned cfg$write_canonical (CFG$TREE *a_tree, char **a_buf, uint32_t *a_len);
+```
+
+**Description**
+
+Gives the settings of the whole tree in the canonical layout: one setting on a line, groups
+over lines with a tab of indentation, the settings of included files in place of the
+`@include` lines. **Comments and the layout of the files are not kept.** The text reads back
+to the same settings - the same fingerprint. This is what CFGTOOL FORMAT writes.
+
+**Condition Values Returned** - STS$K_SUCCESS, CFG$_BROKEN, CFG$_NOMEM, CFG$_BADARG.
 
 ---
 
@@ -1484,6 +1545,12 @@ fingerprint - to the standard output. The **exit status**:
 A path is written as in the library (section 3.3): `system.hostname`, `vlans.[1]`,
 `ports.[id=9].mtu`. Quote it against the shell when it holds brackets or blanks.
 
+Two rules of the command line. An argument is at most 255 octets (CFG$_ARGLONG otherwise). A
+value or a path that begins with `/` or `--` would be taken for a qualifier: put it in double
+quotes inside the quotes of the shell - `cfgtool set r.cfg system.logdir '"/var/log"'`.
+
+/OUTPUT writes through a temporary file and a rename: an old file is never left half written.
+
 Qualifiers that several commands take:
 
 | Qualifier | Meaning |
@@ -1564,9 +1631,17 @@ Sets the value and writes the file back in place (CFG$WRITE): only the value cha
 comments and the layout stay. A setting that is not there is made with the groups on its path.
 
 With `/TYPE=AUTO`, the default, the type comes from the text as in a file (CFG$SET_VALUE):
-`1500` is an integer, `0x1F` a hexadecimal one (written back in hexadecimal), `1.5` a float,
-`true` a boolean, anything else a string. `/TYPE=STRING` sets the text as a string always.
-`/OUTPUT` writes the changed main file elsewhere and leaves the original as it was.
+`1500` is an integer, `0x1F` a hexadecimal one (written back in hexadecimal), `12L` a 64-bit
+one, `1.5` a float, `true` a boolean, `"text"` a string. Whatever is not exactly one such
+value - `10.0.0.5`, `12abc`, `12 # note` - is a string, as it stands. A setting that is there
+already keeps its type where the text allows: a string takes the text as it is (`12` stays the
+string "12"), a float takes an integer (`2` becomes 2.0). `/TYPE=STRING` sets the text as a
+string always.
+
+`/OUTPUT` writes the changed main file elsewhere and leaves the original as it was. It is
+refused (CFG$_INCMODIFIED) when the change falls into an included file: that change would be
+lost. Written in place, a file keeps its mode and owner; a symbolic link stays a link, the file
+it points to is changed.
 
 ```
 $ cfgtool set router.cfg ports.[id=9].mtu 1500
@@ -1762,6 +1837,15 @@ The messages of CFGTOOL:
 **NOSETTING, no setting** *path* **in** *file*
 *Explanation:* GET or DELETE found nothing on the path. *User Action:* Check the path: GET the
 group above it.
+
+**ARGLONG, argument** *n* **is longer than 255 octets**
+*Explanation:* An argument of the command line is too long to be taken whole. *User Action:*
+Shorten it - a long value is better set by a program through CFG$SET_*.
+
+**INCMODIFIED, a change in an included file cannot go into another file**
+*Explanation:* CFG$WRITE_FILE (CFGTOOL /OUTPUT) was asked to write the main file elsewhere, but
+a changed setting lives in an included file. *User Action:* Write in place (CFG$WRITE, CFGTOOL
+without /OUTPUT).
 
 **OPENOUT, cannot create** *file*, **errno=** *n*
 *Explanation:* The file of /OUTPUT cannot be created. *User Action:* As the errno says.

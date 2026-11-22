@@ -86,7 +86,9 @@ static	EMSG_RECORD	s_msgtab [] = {
 	$CFGREC(CFG$_MODIFIED,	"MODIFIED, !AZ set in !AZ"),
 	$CFGREC(CFG$_DELETED,	"DELETED, !AZ deleted from !AZ"),
 	$CFGREC(CFG$_CANTSET,	"CANTSET, cannot change !AZ in !AZ"),
-	$CFGREC(CFG$_OPENOUT,	"OPENOUT, cannot create !AZ, errno=!SL")
+	$CFGREC(CFG$_OPENOUT,	"OPENOUT, cannot create !AZ, errno=!SL"),
+	$CFGREC(CFG$_INCMODIFIED, "INCMODIFIED, a change in an included file cannot go into another file"),
+	$CFGREC(CFG$_ARGLONG,	"ARGLONG, argument !UL is longer than !UL octets")
 	};
 
 static	EMSG_RECORD_DESC	s_msgdsc = {

@@ -1344,7 +1344,8 @@ CFG$NODE	*l_cont = NULL, *l_inc;
 
 /*
 **  DESCRIPTION: Write a text into a file in its place: a temporary file in the same directory,
-**		synced, then renamed over the old one; the mode of the old file is kept.
+**		synced, then renamed over the old one; the mode and the owner of the old file are
+**		kept, a symbolic link is followed (the link stays, its target is replaced).
 **
 **  RETURNS:
 **	STS$K_SUCCESS, CFG$_WRITERR (recorded in the tree), CFG$_NOMEM
@@ -1363,7 +1364,17 @@ uint32_t	l_done = 0;
 struct stat	l_st;
 
 static	const char	s_sfx[] = ".yalibcfg-XXXXXX";
-size_t			l_plen = strlen(a_path);
+char			l_real[PATH_MAX];
+size_t			l_plen;
+
+	/*
+	** A symbolic link is followed: the file it points to is the one replaced, the link stays.
+	** A file that is not there yet is written under its own name.
+	*/
+	if ( realpath(a_path, l_real) )
+		a_path = l_real;
+
+	l_plen = strlen(a_path);
 
 	if ( l_plen + sizeof(s_sfx) > sizeof(l_tmp) )
 		return	cfg$$syserr(a_tree, CFG$_WRITERR, a_path, ENAMETOOLONG);
@@ -1374,8 +1385,14 @@ size_t			l_plen = strlen(a_path);
 	if ( 0 > (l_fd = mkostemp(l_tmp, O_CLOEXEC)) )
 		return	cfg$$syserr(a_tree, CFG$_WRITERR, a_path, errno);
 
+	/* The mode and the owner of the old file are kept (the owner as far as the process may) */
 	if ( !stat(a_path, &l_st) )
+		{
+		if ( fchown(l_fd, l_st.st_uid, l_st.st_gid) )
+			{ /* not the owner and not privileged: the file becomes the writer's */ }
+
 		fchmod(l_fd, l_st.st_mode & 07777);
+		}
 	else	fchmod(l_fd, 0644);
 
 	while ( l_done < a_len )
@@ -1459,10 +1476,10 @@ unsigned	l_sts;
 
 /*
 **  DESCRIPTION: Write the main source of the tree into another file; @include directives stay
-**		as they are.
+**		as they are.  Refused when an included file has changed: that change would be lost.
 **
 **  RETURNS:
-**	STS$K_SUCCESS, CFG$_WRITERR, CFG$_NOMEM, CFG$_BADARG
+**	STS$K_SUCCESS, CFG$_INCMODIFIED, CFG$_WRITERR, CFG$_NOMEM, CFG$_BADARG
 */
 unsigned	cfg$write_file	(
 		CFG$TREE	*a_tree,
@@ -1475,6 +1492,19 @@ unsigned	l_sts;
 
 	if ( !a_tree || !a_path )
 		return	CFG$_BADARG;
+
+	/* A change in an included file would be lost: only the main file goes elsewhere */
+	for ( uint32_t i = 1; i < a_tree->nsrc; i++ )
+		{
+		if ( !(1 & (l_sts = cfg$write_buf(a_tree, i, &l_buf, &l_len))) )
+			return	l_sts;
+
+		l_sts = ((l_len != a_tree->src[i]->len) || memcmp(l_buf, a_tree->src[i]->buf, l_len)) ? CFG$_INCMODIFIED : STS$K_SUCCESS;
+		free(l_buf);
+
+		if ( !(1 & l_sts) )
+			return	l_sts;
+		}
 
 	if ( !(1 & (l_sts = cfg$write_buf(a_tree, 0, &l_buf, &l_len))) )
 		return	l_sts;

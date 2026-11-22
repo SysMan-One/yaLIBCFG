@@ -1047,16 +1047,21 @@ char		*l_copy;
 
 
 /*
-**  DESCRIPTION: Set a scalar from its text as it is written in a file - "9216", "0x1F", "1.5",
-**		"true", "\"text\"" - the type taken from the text; a text that is no scalar of the
-**		syntax is set as a string.  For a command line (CFGTOOL SET).
+**  DESCRIPTION: Set a scalar from its text as it is written in a file - "9216", "0x1F", "12L",
+**		"1.5", "true", "\"text\"" - for a command line (CFGTOOL SET).
+**
+**		The type comes from the text; a text that is not exactly one scalar of the syntax
+**		("10.0.0.5", "12abc", "1 2", "12 # note", "") is a string.  A setting that is there
+**		already keeps its type where the text allows: a string takes the text as it is, a
+**		float takes an integer.  An integer keeps the form of its text: "0x20" is written
+**		back in hexadecimal, "12L" as a 64-bit integer.
 **
 **  INPUTS:
 **	a_base,a_path:	as for CFG$SET_*
 **	a_text,a_len:	the text
 **
 **  RETURNS:
-**	As CFG$SET_*; CFG$_BADNUM - a number out of range
+**	As CFG$SET_*
 */
 unsigned	cfg$set_value	(
 		CFG$NODE	*a_base,
@@ -1067,11 +1072,13 @@ unsigned	cfg$set_value	(
 {
 CFG$SRC		l_src;
 CFG$LEX		l_lex;
-char		*l_buf, *l_str = NULL;
-uint32_t	l_slen = 0, l_tok;
+CFG$NODE	*l_old = NULL, *l_n = NULL;
+char		*l_buf = NULL, *l_str = NULL;
+uint32_t	l_slen = 0, l_tok = CFG$K_TOK_EOF;
 unsigned	l_sts;
+int		l_scalar = 0;
 
-	if ( !a_text && a_len )
+	if ( !a_base || !a_path || (!a_text && a_len) )
 		return	CFG$_BADARG;
 
 	if ( !(l_buf = malloc((size_t) a_len + 1)) )
@@ -1088,57 +1095,68 @@ unsigned	l_sts;
 
 	cfg$$lex_init(&l_lex, NULL, &l_src);
 
-	l_sts = cfg$$lex_next(&l_lex);
-	l_tok = l_lex.tok;
-
-	/* Not one scalar of the syntax - the text itself is the string */
-	if ( !(1 & l_sts) || (l_tok < CFG$K_TOK_INT) || (l_tok > CFG$K_TOK_STRING) )
+	/* Exactly one scalar and nothing else - not even a comment - or it is a string */
+	if ( (1 & cfg$$lex_next(&l_lex)) && ((l_tok = l_lex.tok) >= CFG$K_TOK_INT) && (l_tok <= CFG$K_TOK_STRING) )
 		{
-		l_sts = (l_sts == CFG$_BADNUM) ? CFG$_BADNUM : cfg$set_string(a_base, a_path, a_text, a_len);
-		goto	l_done;
+		l_scalar = 1;
+
+		if ( l_tok == CFG$K_TOK_STRING )
+			{
+			while ( l_scalar && (l_lex.tok == CFG$K_TOK_STRING) )
+				l_scalar = 1 & cfg$$lex_next(&l_lex);
+
+			if ( l_scalar && (!(l_str = malloc((size_t) a_len + 1)) || !(1 & cfg$$lex_string(&l_lex, 0, l_lex.tbeg, l_str, &l_slen))) )
+				l_scalar = 0;
+			}
+		else	l_scalar = 1 & cfg$$lex_next(&l_lex);
+
+		if ( l_scalar && ((l_lex.tok != CFG$K_TOK_EOF) || l_src.ncomm) )
+			l_scalar = 0;
 		}
 
-	if ( l_tok == CFG$K_TOK_STRING )
-		{
-		while ( l_lex.tok == CFG$K_TOK_STRING )
-			if ( !(1 & (l_sts = cfg$$lex_next(&l_lex))) )
-				goto	l_done;
+	/* The setting as it is now, if it is there: its type has a say */
+	if ( !(1 & cfg$lookup(a_base, a_path, &l_old)) )
+		l_old = NULL;
 
-		if ( !(l_str = malloc((size_t) a_len + 1)) || !(1 & (l_sts = cfg$$lex_string(&l_lex, 0, l_lex.tbeg, l_str, &l_slen))) )
+	if ( l_old && (l_old->type == CFG$K_TYPE_STRING) )
+		l_sts = (l_scalar && (l_tok == CFG$K_TOK_STRING)) ? cfg$set_string(a_base, a_path, l_str, l_slen)
+			: cfg$set_string(a_base, a_path, a_text, a_len);
+	else if ( !l_scalar )
+		l_sts = cfg$set_string(a_base, a_path, a_text, a_len);
+	else if ( l_old && (l_old->type == CFG$K_TYPE_FLOAT) && ((l_tok == CFG$K_TOK_INT) || (l_tok == CFG$K_TOK_INT64)) )
+		l_sts = cfg$set_float(a_base, a_path, (double) l_lex.ival);
+	else	{
+		switch ( l_tok )
 			{
-			l_sts = l_str ? l_sts : CFG$_NOMEM;
-			goto	l_done;
+			case CFG$K_TOK_INT:	l_sts = cfg$set_int64(a_base, a_path, l_lex.ival);	break;
+			case CFG$K_TOK_INT64:	l_sts = cfg$set_int64(a_base, a_path, l_lex.ival);	break;
+			case CFG$K_TOK_FLOAT:	l_sts = cfg$set_float(a_base, a_path, l_lex.fval);	break;
+			case CFG$K_TOK_BOOL:	l_sts = cfg$set_bool(a_base, a_path, (int) l_lex.ival);	break;
+			default:		l_sts = cfg$set_string(a_base, a_path, l_str, l_slen);	break;
 			}
 		}
-	else if ( !(1 & (l_sts = cfg$$lex_next(&l_lex))) )
-		goto	l_done;
 
-	/* Something after the scalar: "1 2", "true x" - a string */
-	if ( l_lex.tok != CFG$K_TOK_EOF )
+	/*
+	** An integer keeps the form of its text.  The node is the one found before the change - a
+	** path with a key the change itself alters ("ports.[id=9].id") leads nowhere after it.
+	*/
+	if ( (1 & l_sts) && l_scalar && ((l_tok == CFG$K_TOK_INT) || (l_tok == CFG$K_TOK_INT64)) )
 		{
-		l_sts = cfg$set_string(a_base, a_path, a_text, a_len);
-		goto	l_done;
-		}
+		if ( !(l_n = l_old) && !(1 & cfg$lookup(a_base, a_path, &l_n)) )
+			l_n = NULL;
 
-	switch ( l_tok )
-		{
-		case CFG$K_TOK_INT:	l_sts = cfg$set_int(a_base, a_path, (int32_t) l_lex.ival);	break;
-		case CFG$K_TOK_INT64:	l_sts = cfg$set_int64(a_base, a_path, l_lex.ival);		break;
-		case CFG$K_TOK_FLOAT:	l_sts = cfg$set_float(a_base, a_path, l_lex.fval);		break;
-		case CFG$K_TOK_BOOL:	l_sts = cfg$set_bool(a_base, a_path, (int) l_lex.ival);	break;
-		default:		l_sts = cfg$set_string(a_base, a_path, l_str, l_slen);		break;
-		}
-
-	/* An integer keeps the form of its text: "0x20" stays hexadecimal */
-	if ( (1 & l_sts) && ((l_tok == CFG$K_TOK_INT) || (l_tok == CFG$K_TOK_INT64)) )
-		{
-		CFG$NODE	*l_n;
-
-		if ( 1 & cfg$lookup(a_base, a_path, &l_n) )
+		if ( l_n && ((l_n->type == CFG$K_TYPE_INT) || (l_n->type == CFG$K_TYPE_INT64)) )
+			{
 			l_n->fmt = l_lex.fmt;
+
+			if ( l_lex.suffixl )
+				{
+				l_n->type = CFG$K_TYPE_INT64;
+				l_n->flags |= CFG$M_SUFFIXL;
+				}
+			}
 		}
 
-l_done:
 	free(l_str);
 	free(l_src.comm);
 	free(l_buf);

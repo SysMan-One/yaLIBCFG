@@ -35,6 +35,14 @@ ports.[name="up 1"]     a string key, in double quotes
 A slash may stand for the dot: system/hostname. Quote a path that
 holds brackets or blanks against the shell.
 
+An argument is at most 255 octets. A value or a path that begins
+with / or -- would be taken for a qualifier: put it in double quotes
+inside the quotes of the shell:
+
+```
+$ cfgtool set router.cfg system.logdir '"/var/log"'
+```
+
 ## CHECK -- check a file
 
 ```
@@ -146,12 +154,18 @@ $ cfgtool set router.cfg system.location "Lab, rack 4"
 ### /TYPE=keyword
 
 AUTO (the default) takes the type from the text, as in a file: 1500
-is an integer, 0x1F a hexadecimal one, 1.5 a float, true a boolean,
-anything else a string. STRING sets the text as a string always.
+is an integer, 0x1F a hexadecimal one, 12L a 64-bit one, 1.5 a
+float, true a boolean, "text" a string. Whatever is not exactly one
+such value -- 10.0.0.5, 12abc, 12 # note -- is a string as it
+stands. A setting that is there already keeps its type: a string
+takes the text as it is, a float takes an integer. STRING sets the
+text as a string always.
 
 ### /OUTPUT=file
 
 Writes the changed main file into another file; the original stays.
+Refused when the change falls into an included file: it would be
+lost there.
 
 ### /LOG
 
@@ -205,6 +219,15 @@ an element on the path is missing (elements are never made).
 ### DIFFERENT, IDENTICAL
 
 What DIFF found.
+
+### INCMODIFIED
+
+SET or DELETE /OUTPUT changed a setting of an included file, which
+cannot go into another file. Write in place, without /OUTPUT.
+
+### ARGLONG
+
+An argument is longer than 255 octets.
 
 ### WRITERR, OPENOUT
 

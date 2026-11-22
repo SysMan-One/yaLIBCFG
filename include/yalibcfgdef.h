@@ -97,6 +97,8 @@ enum	{
 	CFG$K_MSG_DELETED,			/* CFGTOOL DELETE: a setting deleted		*/
 	CFG$K_MSG_CANTSET,			/* CFGTOOL SET, DELETE: refused			*/
 	CFG$K_MSG_OPENOUT,			/* CFGTOOL: cannot create the output file	*/
+	CFG$K_MSG_INCMODIFIED,			/* A change in an included file, WRITE_FILE	*/
+	CFG$K_MSG_ARGLONG,			/* CFGTOOL: an argument over 255 octets		*/
 	CFG$K_MSG_MAX				/* End-Of-List					*/
 	};
 
@@ -145,6 +147,8 @@ enum	{
 #define	CFG$_DELETED	$CFGSTS(CFG$K_MSG_DELETED,	STS$K_SUCCESS)
 #define	CFG$_CANTSET	$CFGSTS(CFG$K_MSG_CANTSET,	STS$K_ERROR)
 #define	CFG$_OPENOUT	$CFGSTS(CFG$K_MSG_OPENOUT,	STS$K_ERROR)
+#define	CFG$_INCMODIFIED $CFGSTS(CFG$K_MSG_INCMODIFIED,	STS$K_ERROR)
+#define	CFG$_ARGLONG	$CFGSTS(CFG$K_MSG_ARGLONG,	STS$K_ERROR)
 
 /*
 **  Node types
