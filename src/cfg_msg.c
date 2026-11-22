@@ -64,7 +64,21 @@ static	EMSG_RECORD	s_msgtab [] = {
 	$CFGREC(CFG$_NOMEM,	"NOMEM, memory allocation failure"),
 	$CFGREC(CFG$_TOOBIG,	"TOOBIG, !AD is too big" $CFGPOS),
 	$CFGREC(CFG$_INCTWICE,	"INCTWICE, file included a second time: !AD" $CFGPOS),
-	$CFGREC(CFG$_BROKEN,	"BROKEN, the tree comes from a failed parse")
+	$CFGREC(CFG$_BROKEN,	"BROKEN, the tree comes from a failed parse"),
+	$CFGREC(CFG$_INVALID,	"INVALID, the configuration does not match its schema"),
+	$CFGREC(CFG$_VTYPE,	"VTYPE, wrong type: !AD" $CFGPOS),
+	$CFGREC(CFG$_RANGE,	"RANGE, out of range: !AD" $CFGPOS),
+	$CFGREC(CFG$_LENGTH,	"LENGTH, wrong length: !AD" $CFGPOS),
+	$CFGREC(CFG$_COUNT,	"COUNT, wrong number of elements: !AD" $CFGPOS),
+	$CFGREC(CFG$_BADKWD,	"BADKWD, not an allowed value: !AD" $CFGPOS),
+	$CFGREC(CFG$_BADADDR,	"BADADDR, not a valid address: !AD" $CFGPOS),
+	$CFGREC(CFG$_REQUIRED,	"REQUIRED, missing setting: !AD" $CFGPOS),
+	$CFGREC(CFG$_UNKNOWN,	"UNKNOWN, unknown setting: !AD" $CFGPOS),
+	$CFGREC(CFG$_DUPKEY,	"DUPKEY, duplicate key: !AD" $CFGPOS),
+	$CFGREC(CFG$_CHECK,	"CHECK, !AD" $CFGPOS),
+	$CFGREC(CFG$_DEPRECATED, "DEPRECATED, setting no longer in use: !AD" $CFGPOS),
+	$CFGREC(CFG$_MOREERRS,	"MOREERRS, !UL more diagnostic!%S not kept"),
+	$CFGREC(CFG$_BADSCHEMA,	"BADSCHEMA, the schema is wrong")
 	};
 
 static	EMSG_RECORD_DESC	s_msgdsc = {
@@ -119,8 +133,14 @@ unsigned	cfg$$error	(
 CFG$ERR	*l_err;
 
 	/* No tree - a scan of a value of a path (CFG_TREE.C): nothing to record */
-	if ( !a_tree || (a_tree->nerr >= CFG$K_MAXERRS) )
+	if ( !a_tree )
 		return	a_sts;
+
+	if ( a_tree->nerr >= CFG$K_MAXERRS )
+		{
+		a_tree->ndropped++;
+		return	a_sts;
+		}
 
 	l_err = &a_tree->err[a_tree->nerr++];
 	memset(l_err, 0, sizeof(CFG$ERR));
@@ -161,7 +181,10 @@ CFG$ERR	*l_err;
 size_t	l_len = strnlen(a_what, sizeof(l_err->text));
 
 	if ( a_tree->nerr >= CFG$K_MAXERRS )
+		{
+		a_tree->ndropped++;
 		return	a_sts;
+		}
 
 	l_err = &a_tree->err[a_tree->nerr++];
 	memset(l_err, 0, sizeof(CFG$ERR));
@@ -209,6 +232,9 @@ const	char	*l_file;
 
 		$PUTMSG_FAO(l_err->sts, l_err->len, l_err->text, strlen(l_file), l_file, l_err->line, l_err->col);
 		}
+
+	if ( a_tree->ndropped )
+		$PUTMSG_FAO(CFG$_MOREERRS, a_tree->ndropped);
 
 	return	STS$K_SUCCESS;
 }

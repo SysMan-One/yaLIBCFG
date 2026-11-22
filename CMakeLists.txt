@@ -61,6 +61,7 @@ add_library(yalibcfg STATIC
 	src/cfg_tree.c
 	src/cfg_write.c
 	src/cfg_diff.c
+	src/cfg_schema.c
 	src/cfg_sha1.c)
 
 target_include_directories(yalibcfg
@@ -80,7 +81,7 @@ install(FILES include/yalibcfg.h include/yalibcfgdef.h DESTINATION include)
 option(YALIBCFG_M_EXAMPLES "Build the examples of the manual" ON)
 
 if(YALIBCFG_M_EXAMPLES)
-	foreach(YALIBCFG_K_EX ex1_read ex2_edit ex3_walk ex4_list ex5_diff)
+	foreach(YALIBCFG_K_EX ex1_read ex2_edit ex3_walk ex4_list ex5_diff ex6_schema)
 		add_executable(${YALIBCFG_K_EX} examples/${YALIBCFG_K_EX}.c)
 		target_link_libraries(${YALIBCFG_K_EX} PRIVATE yalibcfg)
 	endforeach()

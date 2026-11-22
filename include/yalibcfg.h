@@ -98,10 +98,40 @@ unsigned	cfg$write	(CFG$TREE *a_tree);
 unsigned	cfg$write_file	(CFG$TREE *a_tree, const char *a_path);
 
 /*
+**  The schema: a table of entries, one per setting of a group, ended by an entry with a NULL
+**  name.  The name "*" stands for any setting the table does not name.  A list or an array
+**  has one entry for its elements in SUB (its name is not used).  See sections 3.7 and 4.6 of
+**  the manual.
+*/
+typedef	struct cfg_keyword_t {
+	const	char	*name;				/* NULL ends the table				*/
+	int64_t		value;				/* for the program; not checked			*/
+} CFG$KEYWORD;
+
+typedef	unsigned (*cfg_check_t) (CFG$NODE *a_node, void *a_arg, char *a_msg, uint32_t a_msgsz, uint32_t *a_msglen);
+
+typedef	struct cfg_schema_t {
+	const	char	*name;				/* setting name; "*" - any other; NULL - end	*/
+	uint32_t	type;				/* CFG$K_TYPE_*					*/
+	uint32_t	flags;				/* CFG$M_REQUIRED, _KEY, _RANGE, ...		*/
+	int64_t		min,				/* integer range, string length, count		*/
+			max;
+	double		fmin,				/* float range					*/
+			fmax;
+	const	CFG$KEYWORD *kwd;			/* CFG$K_TYPE_KWD: the allowed words		*/
+	const	struct cfg_schema_t *sub;		/* a group: its settings; a list, an array:	*/
+							/* one entry for the elements			*/
+	cfg_check_t	check;				/* a routine of the program, or NULL		*/
+	const	char	*help;				/* what the setting is for			*/
+} CFG$SCHEMA;
+
+unsigned	cfg$validate	(CFG$TREE *a_tree, const CFG$SCHEMA *a_schema, void *a_arg, uint32_t *a_nerr);
+
+/*
 **  Comparison of two trees, the fingerprint of a tree
 */
 unsigned	cfg$fingerprint	(CFG$TREE *a_tree, uint8_t a_uuid[16]);
-unsigned	cfg$diff	(CFG$TREE *a_old, CFG$TREE *a_new, uint32_t a_opts, CFG$DIFF **a_diff);
+unsigned	cfg$diff	(CFG$TREE *a_old, CFG$TREE *a_new, const CFG$SCHEMA *a_schema, uint32_t a_opts, CFG$DIFF **a_diff);
 unsigned	cfg$diff_count	(CFG$DIFF *a_diff, uint32_t *a_count);
 unsigned	cfg$diff_entry	(CFG$DIFF *a_diff, uint32_t a_idx, uint32_t *a_op, const char **a_path, CFG$NODE **a_old, CFG$NODE **a_new);
 unsigned	cfg$diff_listing(CFG$DIFF *a_diff, uint32_t a_opts, char **a_buf, uint32_t *a_len);

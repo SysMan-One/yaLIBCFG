@@ -66,6 +66,20 @@ enum	{
 	CFG$K_MSG_TOOBIG,			/* A file or a value is too big			*/
 	CFG$K_MSG_INCTWICE,			/* A file is included twice			*/
 	CFG$K_MSG_BROKEN,			/* The tree comes from a failed parse		*/
+	CFG$K_MSG_INVALID,			/* The tree does not match its schema		*/
+	CFG$K_MSG_VTYPE,			/* Schema: a value of another type		*/
+	CFG$K_MSG_RANGE,			/* Schema: a number out of its range		*/
+	CFG$K_MSG_LENGTH,			/* Schema: a string of a wrong length		*/
+	CFG$K_MSG_COUNT,			/* Schema: a wrong number of elements		*/
+	CFG$K_MSG_BADKWD,			/* Schema: not one of the keywords		*/
+	CFG$K_MSG_BADADDR,			/* Schema: not an IPv4, IPv6 or MAC address	*/
+	CFG$K_MSG_REQUIRED,			/* Schema: a required setting is missing	*/
+	CFG$K_MSG_UNKNOWN,			/* Schema: a setting the schema does not know	*/
+	CFG$K_MSG_DUPKEY,			/* Schema: two elements of a list, one key	*/
+	CFG$K_MSG_CHECK,			/* Schema: the check routine refused a value	*/
+	CFG$K_MSG_DEPRECATED,			/* Schema: a setting no longer in use		*/
+	CFG$K_MSG_MOREERRS,			/* More diagnostics than were kept		*/
+	CFG$K_MSG_BADSCHEMA,			/* The schema itself is wrong			*/
 	CFG$K_MSG_MAX				/* End-Of-List					*/
 	};
 
@@ -92,6 +106,20 @@ enum	{
 #define	CFG$_TOOBIG	$CFGSTS(CFG$K_MSG_TOOBIG,	STS$K_ERROR)
 #define	CFG$_INCTWICE	$CFGSTS(CFG$K_MSG_INCTWICE,	STS$K_ERROR)
 #define	CFG$_BROKEN	$CFGSTS(CFG$K_MSG_BROKEN,	STS$K_ERROR)
+#define	CFG$_INVALID	$CFGSTS(CFG$K_MSG_INVALID,	STS$K_ERROR)
+#define	CFG$_VTYPE	$CFGSTS(CFG$K_MSG_VTYPE,	STS$K_ERROR)
+#define	CFG$_RANGE	$CFGSTS(CFG$K_MSG_RANGE,	STS$K_ERROR)
+#define	CFG$_LENGTH	$CFGSTS(CFG$K_MSG_LENGTH,	STS$K_ERROR)
+#define	CFG$_COUNT	$CFGSTS(CFG$K_MSG_COUNT,	STS$K_ERROR)
+#define	CFG$_BADKWD	$CFGSTS(CFG$K_MSG_BADKWD,	STS$K_ERROR)
+#define	CFG$_BADADDR	$CFGSTS(CFG$K_MSG_BADADDR,	STS$K_ERROR)
+#define	CFG$_REQUIRED	$CFGSTS(CFG$K_MSG_REQUIRED,	STS$K_ERROR)
+#define	CFG$_UNKNOWN	$CFGSTS(CFG$K_MSG_UNKNOWN,	STS$K_ERROR)
+#define	CFG$_DUPKEY	$CFGSTS(CFG$K_MSG_DUPKEY,	STS$K_ERROR)
+#define	CFG$_CHECK	$CFGSTS(CFG$K_MSG_CHECK,	STS$K_ERROR)
+#define	CFG$_DEPRECATED	$CFGSTS(CFG$K_MSG_DEPRECATED,	STS$K_WARN)
+#define	CFG$_MOREERRS	$CFGSTS(CFG$K_MSG_MOREERRS,	STS$K_INFO)
+#define	CFG$_BADSCHEMA	$CFGSTS(CFG$K_MSG_BADSCHEMA,	STS$K_ERROR)
 
 /*
 **  Node types
@@ -106,8 +134,29 @@ enum	{
 	CFG$K_TYPE_FLOAT,			/* double					*/
 	CFG$K_TYPE_BOOL,			/* true / false					*/
 	CFG$K_TYPE_STRING,			/* "..."					*/
-	CFG$K_TYPE_INCLUDE			/* @include "file" - kept for the write-back	*/
+	CFG$K_TYPE_INCLUDE,			/* @include "file" - kept for the write-back	*/
+
+	/* Types of a schema only: strings with a meaning, checked by CFG$VALIDATE */
+	CFG$K_TYPE_KWD		= 32,		/* one of the keywords of KWD			*/
+	CFG$K_TYPE_IPV4,			/* "192.168.1.1"				*/
+	CFG$K_TYPE_IPV6,			/* "2001:db8::1"				*/
+	CFG$K_TYPE_IPADDR,			/* either of them				*/
+	CFG$K_TYPE_MAC				/* "00:1b:44:11:3a:b7" (or with '-')		*/
 	};
+
+/*
+**  Flags of an entry of a schema (CFG$SCHEMA.FLAGS)
+*/
+#define	CFG$M_REQUIRED		0x0001		/* must be there				*/
+#define	CFG$M_KEY		0x0002		/* the key of the elements of a list: required,	*/
+						/* unique in the list; CFG$DIFF matches by it	*/
+#define	CFG$M_RANGE		0x0004		/* MIN..MAX (FMIN..FMAX for a float) apply	*/
+#define	CFG$M_LENGTH		0x0008		/* a string: its length within MIN..MAX		*/
+#define	CFG$M_COUNT		0x0010		/* a list, an array: elements within MIN..MAX	*/
+#define	CFG$M_DEPRECATED	0x0020		/* still taken, with a warning			*/
+#define	CFG$M_OPEN		0x0040		/* a group: settings the schema does not name	*/
+						/* are taken without a word			*/
+#define	CFG$M_CASEKWD		0x0080		/* keywords compared with regard to case	*/
 
 /*
 **  Options of the parse (CFG$PARSE_FILE, CFG$PARSE_BUF)

@@ -9,10 +9,12 @@ What it adds over libconfig:
 - **lossless write-back** - comments and layout survive; an unchanged file is written byte for byte;
 - **schema validation** - types, ranges, keywords, required items, keys of lists, with
   OpenVMS-style condition values that name the file, line and column;
-- **diff of two trees** - add / modify / delete with paths, lists of groups matched by key.
+- **diff of two trees** - add / modify / delete with paths, lists of groups matched by key, a
+  listing in the manner of the OpenVMS DIFFERENCES utility, a UUID fingerprint of a configuration.
 
-Status: parse, tree, paths, lossless write-back, comparison with a VMS-style listing and
-fingerprints are done and tested.  Schema validation is next.  The manual is
-`doc/yalibcfg_manual.md`; the design (in Russian) is `doc/yalibcfg_design_rus.md`.
+Status: parse, tree, paths, lossless write-back, schema validation, comparison with a
+VMS-style listing and fingerprints are done and tested.  The manual is
+`doc/yalibcfg_manual.md` (in Russian: `doc/yalibcfg_manual_ru.md`); the design (in Russian) is
+`doc/yalibcfg_design_rus.md`.
 
 License: Apache-2.0.  Copyright 2026 StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan).

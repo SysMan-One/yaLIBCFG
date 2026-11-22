@@ -29,7 +29,7 @@ int	main (int argc, char **argv)
 		sts = cfg$parse_file(argv[2], 0, &new);
 
 	if ( sts & 1 )
-		sts = cfg$diff(old, new, 0, &diff);
+		sts = cfg$diff(old, new, NULL, 0, &diff);
 
 	if ( !(sts & 1) )
 		{

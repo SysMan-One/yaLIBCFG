@@ -24,7 +24,7 @@ static char *	ops (const char *a, const char *b, uint32_t opts)
 	uint32_t	n = 0, op;
 	const char	*path;
 
-	if ( cfg$diff(x, y, opts, &d) & 1 )
+	if ( cfg$diff(x, y, NULL, opts, &d) & 1 )
 		{
 		cfg$diff_count(d, &n);
 
@@ -121,7 +121,7 @@ int	main (void)
 		const char	*path;
 
 		cfg$root(x, &rx); cfg$root(y, &ry);
-		OK(cfg$diff(x, y, 0, &d));
+		OK(cfg$diff(x, y, NULL, 0, &d));
 		cfg$diff_count(d, &cnt);
 		CHECK(cnt == 4, "4 differences, got %u", cnt);
 
@@ -146,7 +146,7 @@ int	main (void)
 		memset(name, 'n', sizeof(name) - 1);
 		cfg$parse_buf("a = 1;", 6, name, 0, &x);
 		cfg$parse_buf("a = 2;", 6, name, 0, &y);
-		OK(cfg$diff(x, y, 0, &d));
+		OK(cfg$diff(x, y, NULL, 0, &d));
 		OK(cfg$diff_listing(d, CFG$M_NOTIME, &txt, &len));
 		CHECK(strstr(txt, name) != NULL, "long name not in the listing");
 		free(txt); cfg$diff_free(d); cfg$free(x); cfg$free(y);

@@ -45,6 +45,12 @@
 #include	"yalibcfg.h"
 
 #define	CFG$K_NOSEP		0xFFFFFFFFU		/* no separator after the element		*/
+
+/*
+**  $CFG_FAO - __UTIL$FAO with the parameters written plain: they are cast to fao_prm_t and
+**  counted by FAO$_EACH of UTILITY_ROUTINES.H, as $PUTMSG_FAO does.
+*/
+#define	$CFG_FAO(ctl, outlen, dsc, ...)	__util$fao(ctl, outlen, dsc FAO$_EACH(__VA_ARGS__))
 #define	CFG$K_ARENA		(64U * 1024U)		/* size of an arena chunk			*/
 
 /*
@@ -138,7 +144,8 @@ struct cfg_tree_t {
 	CFG$NODE	*root;
 	uint32_t	nsrc;
 	CFG$SRC		*src[CFG$K_MAXSRC];
-	uint32_t	nerr;
+	uint32_t	nerr,
+			ndropped;			/* diagnostics past CFG$K_MAXERRS, not kept	*/
 	CFG$ERR		err[CFG$K_MAXERRS];
 };
 
@@ -213,6 +220,13 @@ int		cfg$$span_at	(CFG$SRC *a_src, uint32_t a_pos, uint32_t *a_beg, uint32_t *a_
 */
 unsigned	cfg$$format_string(const char *a_str, uint32_t a_len, char **a_out, uint32_t *a_outlen);
 unsigned	cfg$$text_flat	(CFG$NODE *a_node, int a_name, char **a_buf, uint32_t *a_len);
+unsigned	cfg$$text_double(double a_val, char *a_buf, uint32_t a_bufsz, uint32_t *a_len);
+
+/*
+**  CFG_SCHEMA.C helpers used by CFG_DIFF.C
+*/
+const	CFG$SCHEMA *	cfg$$schema_entry	(const CFG$SCHEMA *a_table, CFG$TREE *a_tree, const char *a_name, uint32_t a_len);
+const	char *		cfg$$schema_key		(const CFG$SCHEMA *a_elem);
 
 /*
 **  CFG_SHA1.C

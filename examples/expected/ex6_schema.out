@@ -1,0 +1,2 @@
+router.cfg: valid
+router-bad.cfg: 7 problem(s)

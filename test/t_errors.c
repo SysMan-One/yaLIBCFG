@@ -77,7 +77,7 @@ int	main (void)
 		CHECK(cfg$write_buf(t, 0, &out, &len) == CFG$_BROKEN, "write of a broken tree");
 		CHECK(cfg$write(t) == CFG$_BROKEN, "write back of a broken tree");
 		CHECK(cfg$fingerprint(t, u) == CFG$_BROKEN, "fingerprint of a broken tree");
-		CHECK(cfg$diff(t, t, 0, &d) == CFG$_BROKEN, "diff of a broken tree");
+		CHECK(cfg$diff(t, t, NULL, 0, &d) == CFG$_BROKEN, "diff of a broken tree");
 		cfg$free(t);
 	}
 

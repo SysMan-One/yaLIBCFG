@@ -37,3 +37,25 @@ file(READ ${SRCDIR}/expected/ex5_diff.out WANT)
 if(NOT OUT STREQUAL WANT)
 	message(FATAL_ERROR "ex5_diff: output differs\n--- want\n${WANT}--- got\n${OUT}---")
 endif()
+
+#	ex6_schema: a valid file and one with mistakes; the lines of the messages carry the time and
+#	are not compared - only the lines the example prints itself
+foreach(PAIR "router.cfg;0" "router-bad.cfg;1")
+	list(GET PAIR 0 F)
+	list(GET PAIR 1 WANTRC)
+	execute_process(COMMAND ${EXDIR}/ex6_schema ${F} WORKING_DIRECTORY ${SRCDIR}
+		OUTPUT_VARIABLE OUT ERROR_VARIABLE ERR RESULT_VARIABLE RC)
+
+	if(NOT RC EQUAL WANTRC)
+		message(FATAL_ERROR "ex6_schema ${F}: exit ${RC}, want ${WANTRC}\n${ERR}")
+	endif()
+
+	string(REGEX REPLACE "[^\n]*%CFG-[^\n]*\n" "" OUT "${OUT}")
+	string(APPEND OUT6 "${OUT}")
+endforeach()
+
+file(READ ${SRCDIR}/expected/ex6_schema.out WANT)
+
+if(NOT OUT6 STREQUAL WANT)
+	message(FATAL_ERROR "ex6_schema: output differs\n--- want\n${WANT}--- got\n${OUT6}---")
+endif()

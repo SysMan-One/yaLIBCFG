@@ -99,7 +99,7 @@ char		l_msg[96];
 fao_desc_t	l_dsc = $FAO_DESC(l_msg);
 unsigned short	l_len = 0;
 
-	__util$fao("expected !AZ, found !AZ", &l_len, &l_dsc, (fao_prm_t) a_what, (fao_prm_t) cfg$$tokname(a_p->lex.tok));
+	$CFG_FAO("expected !AZ, found !AZ", &l_len, &l_dsc, a_what, cfg$$tokname(a_p->lex.tok));
 
 	return	cfg$$error(a_p->tree, CFG$_SYNTAX, a_p->src->no, a_p->lex.tline, a_p->lex.tcol, l_msg, l_len);
 }
@@ -372,11 +372,13 @@ CFG$TREE	*l_tree;
 **  RETURNS:
 **	STS$K_SUCCESS or a condition value of the parse of the included file
 */
-static unsigned	s_include	(
+static unsigned	s_include_buf	(
 		CFG$PARSE	*a_p,
 		CFG$NODE	*a_cont,
 		uint32_t	a_floor,
-		uint32_t	*a_end
+		uint32_t	*a_end,
+		char		*l_name,
+		char		*l_path
 			)
 {
 CFG$NODE	*l_node;
@@ -384,7 +386,6 @@ CFG$PARSE	l_inc, *l_up;
 CFG$SRC		*l_isrc;
 uint32_t	l_len, l_line = a_p->lex.tline, l_col = a_p->lex.tcol, l_beg = a_p->lex.tbeg;
 unsigned	l_sts;
-char		l_name[PATH_MAX], l_path[PATH_MAX];
 const	char	*l_slash;
 
 	if ( a_p->tree->opts & CFG$M_NOINCLUDE )
@@ -396,7 +397,7 @@ const	char	*l_slash;
 	if ( a_p->lex.tok != CFG$K_TOK_STRING )
 		return	s_expected(a_p, "a file name string");
 
-	if ( (a_p->lex.tend - a_p->lex.tbeg) >= sizeof(l_name) )
+	if ( (a_p->lex.tend - a_p->lex.tbeg) >= PATH_MAX )
 		return	cfg$$error(a_p->tree, CFG$_TOOBIG, a_p->src->no, l_line, l_col, "file name", 9);
 
 	if ( !(1 & (l_sts = cfg$$lex_string(&a_p->lex, a_p->lex.tbeg, a_p->lex.tend, l_name, &l_len))) )
@@ -433,7 +434,7 @@ const	char	*l_slash;
 	/* A relative name is taken from the directory of the including file */
 	if ( (l_name[0] != '/') && (l_slash = strrchr(a_p->src->path, '/')) )
 		{
-		if ( (size_t) (l_slash - a_p->src->path) + 1 + l_len + 1 > sizeof(l_path) )
+		if ( (size_t) (l_slash - a_p->src->path) + 1 + l_len + 1 > PATH_MAX )
 			return	cfg$$error(a_p->tree, CFG$_TOOBIG, a_p->src->no, l_line, l_col, "file name", 9);
 
 		memcpy(l_path, a_p->src->path, (size_t) (l_slash - a_p->src->path) + 1);
@@ -477,6 +478,31 @@ const	char	*l_slash;
 		return	l_sts;
 
 	return	s_settings(&l_inc, a_cont, 0, CFG$K_TOK_EOF);
+}
+
+
+
+/*
+**  DESCRIPTION: @include "file" - the names in buffers from the heap, so that the frames of the
+**		recursion of the parse stay small whatever the compiler inlines.
+*/
+static unsigned	s_include	(
+		CFG$PARSE	*a_p,
+		CFG$NODE	*a_cont,
+		uint32_t	a_floor,
+		uint32_t	*a_end
+			)
+{
+char		*l_buf;
+unsigned	l_sts;
+
+	if ( !(l_buf = malloc(2 * PATH_MAX)) )
+		return	CFG$_NOMEM;
+
+	l_sts = s_include_buf(a_p, a_cont, a_floor, a_end, l_buf, l_buf + PATH_MAX);
+	free(l_buf);
+
+	return	l_sts;
 }
 
 

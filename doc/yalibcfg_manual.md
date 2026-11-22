@@ -87,7 +87,9 @@ differences as a listing in the manner of the OpenVMS DIFFERENCES utility. Every
 gets a **fingerprint**, a UUID made of its settings, so that a listing tells whose
 configurations it compares.
 
-> Schema validation is the next stage of the library.
+And it **validates** a file by a **schema** - a table in the program that says which settings
+there are, of what types, in what ranges - and tells the user everything that is wrong with
+the file in one go, each problem with its line and column.
 
 ### 1.3 A First Look
 
@@ -377,9 +379,10 @@ CFG$DIFF compares two trees **by their settings**. Comments, layout and the orde
 settings in a group do not count. The rules:
 
 * In a group, settings are matched by name.
-* In a list, elements are matched by a **key** when there is one: every element of both lists
-  is a group holding a scalar `id` (or else `name`, or else `key`), unique in its list.
-  Such an element is named by its key: `ports.[id=9]`. Otherwise - or always, with
+* In a list, elements are matched by a **key** when there is one: the setting a schema flags
+  CFG$M_KEY (section 3.7), when the program gives the schema; else `id` (or `name`, or
+  `key`) when every element of both lists is a group holding it as a scalar, unique in its
+  list. Such an element is named by its key: `ports.[id=9]`. Otherwise - or always, with
   CFG$M_POSITIONAL - by position: `list.[2]`.
 * An array is one value: `[1, 2, 3]` and `[1, 3]` differ as a whole.
 * A node whose type changed is a change of the whole node. A 32-bit and a 64-bit integer of the
@@ -399,6 +402,67 @@ order of the elements of a list with a key. So:
 
 A listing names the fingerprints of both trees. Keep listings, and you can always tell which
 configuration was compared with which.
+
+### 3.7 Schemas
+
+A **schema** tells what a file may hold. It is a table in your program, one entry per setting,
+in the spirit of the verb tables of `cli_routines`:
+
+```c
+typedef struct cfg_schema_t {
+	const char	*name;		/* the setting; "*" - any other; NULL - end of the table	*/
+	uint32_t	type;		/* CFG$K_TYPE_*						*/
+	uint32_t	flags;		/* CFG$M_REQUIRED, CFG$M_KEY, CFG$M_RANGE, ...		*/
+	int64_t		min, max;	/* integer range, string length, number of elements	*/
+	double		fmin, fmax;	/* float range						*/
+	const CFG$KEYWORD *kwd;		/* the words of a CFG$K_TYPE_KWD			*/
+	const struct cfg_schema_t *sub;	/* a group: its table; a list, an array: one entry for	*/
+					/* the elements						*/
+	cfg_check_t	check;		/* a routine of the program, or NULL			*/
+	const char	*help;		/* what the setting is for				*/
+} CFG$SCHEMA;
+```
+
+Besides the types of the file, a schema has types that are strings with a meaning:
+
+| Type | The string must be |
+|---|---|
+| CFG$K_TYPE_KWD | one of the words of KWD; case does not matter unless CFG$M_CASEKWD |
+| CFG$K_TYPE_IPV4 | an IPv4 address: `"192.168.1.1"` |
+| CFG$K_TYPE_IPV6 | an IPv6 address: `"2001:db8::1"` |
+| CFG$K_TYPE_IPADDR | either of them |
+| CFG$K_TYPE_MAC | a MAC address: `"00:1b:44:11:3a:b7"` or with `-` |
+
+A CFG$K_TYPE_FLOAT entry takes an integer too (`load = 1;`); a CFG$K_TYPE_INT entry takes a
+value that fits 32 bits, a CFG$K_TYPE_INT64 one any integer.
+
+The flags:
+
+| Flag | Meaning |
+|---|---|
+| CFG$M_REQUIRED | The setting must be there. |
+| CFG$M_KEY | In a group that is an element of a list: the key of the elements - required, unique in the list. CFG$DIFF given the schema matches the elements by it, and the diagnostics name an element by it: `ports.[id=9]`. |
+| CFG$M_RANGE | MIN..MAX apply to an integer, FMIN..FMAX to a float. |
+| CFG$M_LENGTH | MIN..MAX apply to the length of a string. |
+| CFG$M_COUNT | MIN..MAX apply to the number of elements of a list or an array. |
+| CFG$M_DEPRECATED | Still taken, with a warning. |
+| CFG$M_OPEN | A group: settings its table does not name are taken without a word. |
+| CFG$M_CASEKWD | Keywords are compared with regard to case. |
+
+A setting the table of its group does not name is an error (CFG$_UNKNOWN) - so a typo in a
+file never passes in silence. The name `"*"` in a table stands for any setting the table does
+not name otherwise, for groups whose setting names are data: `users = { amy = {...}; bob = {...}; }`.
+
+The entry of a list or an array is a single entry in SUB, for all its elements; its name is
+not used.
+
+When the rules of the table are not enough - "the MTU of an uplink must be bigger than of an
+access port" - the entry gets a **check routine**. It sees the node only when all the other
+checks of the node and of what is inside it passed, and says what is wrong in its own words:
+
+```c
+typedef unsigned (*cfg_check_t) (CFG$NODE *a_node, void *a_arg, char *a_msg, uint32_t a_msgsz, uint32_t *a_msglen);
+```
 
 ---
 
@@ -569,7 +633,7 @@ CFG$WRITE_FILE, CFG$DIFF and CFG$FINGERPRINT refuse it with CFG$_BROKEN.
 		sts = cfg$parse_file(argv[2], 0, &new);
 
 	if ( sts & 1 )
-		sts = cfg$diff(old, new, 0, &diff);
+		sts = cfg$diff(old, new, NULL, 0, &diff);
 	...
 	if ( cfg$diff_listing(diff, (argc > 3) ? CFG$M_NOTIME : 0, &text, &len) & 1 )
 		{
@@ -666,6 +730,98 @@ for ( uint32_t i = 0; i < n; i++ )
 		... take PATH down on the equipment ...
 	}
 ```
+
+### 4.6 Validating a File
+
+`examples/ex6_schema.c` describes `router.cfg` by a schema and checks a file by it:
+
+```c
+/* The words SPEED may take */
+static const CFG$KEYWORD	s_speeds[] = {
+	{ "1G",  1000 },
+	{ "10G", 10000 },
+	{ NULL,  0 }
+};
+
+/* SYSTEM = { ... } */
+static const CFG$SCHEMA	s_system[] = {
+	{ .name = "hostname", .type = CFG$K_TYPE_STRING, .flags = CFG$M_REQUIRED | CFG$M_LENGTH, .min = 1, .max = 32,
+	  .help = "name of the router, shown in the prompt" },
+	{ .name = "location", .type = CFG$K_TYPE_STRING, .help = "where it stands" },
+	{ .name = "snmp",     .type = CFG$K_TYPE_GROUP,  .flags = CFG$M_OPEN, .help = "SNMP agent, not checked here" },
+	{ .name = NULL }
+};
+
+/* An element of PORTS: a group, its key ID */
+static const CFG$SCHEMA	s_port[] = {
+	{ .name = "id",      .type = CFG$K_TYPE_INT,  .flags = CFG$M_KEY | CFG$M_RANGE, .min = 1, .max = 48 },
+	{ .name = "speed",   .type = CFG$K_TYPE_KWD,  .flags = CFG$M_REQUIRED, .kwd = s_speeds },
+	{ .name = "enabled", .type = CFG$K_TYPE_BOOL },
+	{ .name = "mtu",     .type = CFG$K_TYPE_INT,  .flags = CFG$M_RANGE, .min = 64, .max = 9216 },
+	{ .name = NULL }
+};
+
+static const CFG$SCHEMA	s_port_elem = { .type = CFG$K_TYPE_GROUP, .sub = s_port };
+static const CFG$SCHEMA	s_vlan_elem = { .type = CFG$K_TYPE_INT, .flags = CFG$M_RANGE, .min = 1, .max = 4094 };
+
+/* The file */
+static const CFG$SCHEMA	s_router[] = {
+	{ .name = "system", .type = CFG$K_TYPE_GROUP, .flags = CFG$M_REQUIRED, .sub = s_system },
+	{ .name = "ports",  .type = CFG$K_TYPE_LIST,  .flags = CFG$M_COUNT, .min = 1, .max = 48, .sub = &s_port_elem },
+	{ .name = "vlans",  .type = CFG$K_TYPE_ARRAY, .sub = &s_vlan_elem },
+	{ .name = NULL }
+};
+
+```
+
+```c
+	sts = cfg$validate(tree, s_router, NULL, &nerr);
+
+	if ( sts & 1 )
+		printf("%s: valid\n", ...);
+	else	{
+		printf("%s: %u problem(s)\n", ..., nerr);
+		cfg$puterrs(tree);			/* each with its line and column		*/
+		}
+```
+
+A file with mistakes, `examples/router-bad.cfg`:
+
+```
+# router-bad.cfg - router.cfg with mistakes, for example 6
+
+system = {
+	hostnme = "edge-1";			# a typo
+};
+
+ports = (
+	{ id = 1;  speed = "100M"; enabled = true; },
+	{ id = 9;  speed = "10G";  enabled = "yes"; mtu = 9216; },
+	{ id = 9;  speed = "10G";  enabled = false; mtu = 65000; }
+);
+
+vlans = [ 1, 100, 5000 ];
+```
+
+One run tells everything:
+
+```
+$ ex6_schema router-bad.cfg
+%CFG-E-UNKNOWN, unknown setting: system.hostnme, router-bad.cfg line 4 column 2
+%CFG-E-REQUIRED, missing setting: system.hostname, router-bad.cfg line 3 column 1
+%CFG-E-BADKWD, not an allowed value: ports.[id=1].speed = "100M", allowed: 1G, 10G, router-bad.cfg line 8 column 13
+%CFG-E-VTYPE, wrong type: ports.[id=9].enabled: a boolean expected, found a string, router-bad.cfg line 9 column 29
+%CFG-E-DUPKEY, duplicate key: ports.[id=9], the same as line 9, router-bad.cfg line 10 column 2
+%CFG-E-RANGE, out of range: ports.[id=9].mtu = 65000, allowed 64..9216, router-bad.cfg line 10 column 46
+%CFG-E-RANGE, out of range: vlans.[2] = 5000, allowed 1..4094, router-bad.cfg line 13 column 19
+router-bad.cfg: 7 problem(s)
+```
+
+(A program built without `NDEBUG` puts the time, the thread and the place in the code before
+every message, as all StarLet messages do.)
+
+Validate a file **before** you apply it, and give the user the whole list: it is much kinder
+than stopping at the first mistake.
 
 ---
 
@@ -1119,6 +1275,53 @@ Writes the text of the main source into `a_path`, the same safe way as CFG$WRITE
 
 ---
 
+## CFG$VALIDATE - Validate a Tree by a Schema
+
+**Format**
+
+```c
+unsigned cfg$validate (CFG$TREE *a_tree, const CFG$SCHEMA *a_schema, void *a_arg, uint32_t *a_nerr);
+```
+
+**Arguments**
+
+| Argument | Type | Access | Mechanism | Description |
+|---|---|---|---|---|
+| a_tree | CFG$TREE | modify | by reference | The tree. The record of its diagnostics is started afresh. |
+| a_schema | CFG$SCHEMA | read | by reference | The table of the settings of the root group, ended by an entry with a NULL name (section 3.7). |
+| a_arg | void | read | by reference | Passed to the check routines of the schema, as it is. |
+| a_nerr | uint32_t | write | by reference | The number of diagnostics - errors and warnings, kept or not; may be NULL. |
+
+**Description**
+
+Checks every node of the tree against its entry of the schema: the type, the range, the length,
+the keywords, the addresses, the number of elements, the required settings, the settings the
+schema does not know, the uniqueness of the keys of lists, and last the check routines of the
+program.
+
+The validation **does not stop at the first error**. Every problem is recorded in the tree with
+its position and the path of the setting, for CFG$PUTERRS; at most CFG$K_MAXERRS are kept, the
+rest are counted and CFG$PUTERRS says how many were not kept (CFG$_MOREERRS). A node of a wrong
+type is reported once, and what is inside it is not looked at.
+
+The schema itself is checked first: a KWD entry without words, a key outside a list element or
+not a scalar, two keys, MIN greater than MAX, a list without the entry for its elements, a
+schema deeper than 64 levels - all are the programmer's mistakes, returned as CFG$_BADSCHEMA
+before any file is blamed. A schema may refer to itself (a menu whose items are menus): each
+entry is checked once.
+
+**Condition Values Returned**
+
+| Value | Meaning |
+|---|---|
+| STS$K_SUCCESS | The tree matches the schema. There may be warnings (DEPRECATED) in the record. |
+| CFG$_INVALID | It does not: the diagnostics are in the tree. |
+| CFG$_BADSCHEMA | The schema is wrong. |
+| CFG$_BROKEN | The tree comes from a failed parse. |
+| CFG$_BADARG, CFG$_NOMEM | As the names say. |
+
+---
+
 ## CFG$FINGERPRINT - Get the Fingerprint of a Tree
 
 **Format**
@@ -1150,7 +1353,7 @@ The fingerprint is of the tree as it is now: after a change, compute it again.
 **Format**
 
 ```c
-unsigned cfg$diff (CFG$TREE *a_old, CFG$TREE *a_new, uint32_t a_opts, CFG$DIFF **a_diff);
+unsigned cfg$diff (CFG$TREE *a_old, CFG$TREE *a_new, const CFG$SCHEMA *a_schema, uint32_t a_opts, CFG$DIFF **a_diff);
 ```
 
 **Arguments**
@@ -1158,6 +1361,7 @@ unsigned cfg$diff (CFG$TREE *a_old, CFG$TREE *a_new, uint32_t a_opts, CFG$DIFF *
 | Argument | Type | Access | Mechanism | Description |
 |---|---|---|---|---|
 | a_old, a_new | CFG$TREE | read | by reference | The trees. They must live as long as the comparison. |
+| a_schema | CFG$SCHEMA | read | by reference | NULL, or the schema of the trees: lists are then matched by the key it flags (CFG$M_KEY) - when every element has it and no two share it; else by position. |
 | a_opts | uint32_t | read | by value | 0, or CFG$M_POSITIONAL - lists by position only. |
 | a_diff | CFG$DIFF * | write | by reference | The comparison. Free it with CFG$DIFF_FREE. |
 
@@ -1220,8 +1424,8 @@ unsigned cfg$diff_listing (CFG$DIFF *a_diff, uint32_t a_opts, char **a_buf, uint
 
 Makes the listing shown in section 4.5: a header with both files and their fingerprints, a
 section for every difference with the line in each file and the setting in its canonical
-form, a summary, and a trailer naming the files. Values are written on one line: a group as
-`{ a = 1; b = 2; }`.
+form, a summary, and a trailer naming the files and how lists were matched: `/KEYS=(ID,NAME,KEY)`,
+`/SCHEMA` or `/POSITIONAL`. Values are written on one line: a group as `{ a = 1; b = 2; }`.
 
 **Condition Values Returned** - STS$K_SUCCESS, CFG$_NOMEM, CFG$_BADARG.
 
@@ -1337,6 +1541,63 @@ of the right type, or remove the node and add it anew.
 **WRITERR, error writing** *file*, **errno=** *n*
 *Explanation:* The file could not be written: no space (28), no access to the directory (13).
 The old file is left as it was. *User Action:* As the errno says.
+
+The messages of a validation (CFG$VALIDATE) begin with the path of the setting:
+
+**BADKWD, not an allowed value:** *path = value, allowed: words*
+*Explanation:* A keyword setting holds a word its schema does not list. *User Action:* Use one
+of the words given.
+
+**BADADDR, not a valid address:** *path = value is not ...*
+*Explanation:* The string is not an IPv4, IPv6 or MAC address, as the schema wants.
+*User Action:* Correct the address.
+
+**BADSCHEMA, the schema is wrong**
+*Explanation:* A programmer's mistake in the schema table (see CFG$VALIDATE). *User Action:*
+Correct the table.
+
+**CHECK,** *path: text*
+*Explanation:* A check routine of the program refused the value; the text is the program's.
+*User Action:* As the text says.
+
+**COUNT, wrong number of elements:** *path has n, allowed min..max*
+*User Action:* Add or remove elements.
+
+**DEPRECATED, setting no longer in use:** *path*
+*Explanation:* A warning: the setting is still taken, but will go. *User Action:* See the
+documentation of the program for what replaces it.
+
+**DUPKEY, duplicate key:** *path, the same as line n [of file]*
+*Explanation:* Two elements of a list have the same key; the line is that of the first of them
+(in another file, when it came from an included one), or "an element added by the program". *User Action:* Give them different
+keys or remove one.
+
+**INVALID, the configuration does not match its schema**
+*Explanation:* The condition value of CFG$VALIDATE when it found errors; the diagnostics
+themselves are in the tree.
+
+**LENGTH, wrong length:** *path = value is n long, allowed min..max*
+*User Action:* Shorten or lengthen the string.
+
+**MOREERRS,** *n* **more diagnostics not kept**
+*Explanation:* There were more problems than CFG$K_MAXERRS. *User Action:* Correct the ones
+shown and validate again.
+
+**RANGE, out of range:** *path = value, allowed min..max*
+*User Action:* Give a value within the range.
+
+**REQUIRED, missing setting:** *path*
+*Explanation:* A required setting (or the key of a list element) is not there; the position is
+that of the group it should be in. *User Action:* Add it.
+
+**UNKNOWN, unknown setting:** *path*
+*Explanation:* The schema does not know the setting - most often a typo. *User Action:* Check
+the spelling.
+
+**VTYPE, wrong type:** *path: X expected, found Y*
+*Explanation:* The value is of another type than the schema wants; what is inside it is not
+checked. *User Action:* Correct the value: a string in quotes, a boolean as `true` or
+`false`, a group in braces.
 
 ---
 

@@ -753,6 +753,49 @@ CFG$OUT	l_o;
 
 
 /*
+**  DESCRIPTION: The text of a floating number (as the writer makes it) into a buffer of the
+**		caller - for the diagnostics of a schema.
+**
+**  RETURNS:
+**	STS$K_SUCCESS, CFG$_NOMEM, CFG$_TOOBIG - the buffer is too small
+*/
+unsigned	cfg$$text_double	(
+		double		a_val,
+		char		*a_buf,
+		uint32_t	a_bufsz,
+		uint32_t	*a_len
+			)
+{
+CFG$OUT	l_o;
+
+	memset(&l_o, 0, sizeof(l_o));
+	l_o.sts = STS$K_SUCCESS;
+	l_o.nl = "\n";
+
+	s_gen_float(&l_o, a_val);
+
+	if ( !(1 & l_o.sts) )
+		{
+		free(l_o.p);
+		return	l_o.sts;
+		}
+
+	if ( l_o.len + 1 > a_bufsz )
+		{
+		free(l_o.p);
+		return	CFG$_TOOBIG;
+		}
+
+	memcpy(a_buf, l_o.p, l_o.len + 1);
+	*a_len = l_o.len;
+	free(l_o.p);
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+/*
 **  DESCRIPTION: The whitespace at the beginning of the line that holds an offset, into A_OUT.
 */
 static void	s_indent_of	(

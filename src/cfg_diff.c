@@ -18,9 +18,10 @@
 **		trees together:
 **
 **		  - in a group, settings are matched by name;
-**		  - in a list, elements are matched by a KEY when there is one: every element of
-**		    both lists is a group holding a scalar ID (or else NAME, or else KEY), unique
-**		    in its list.  The path of such an element is "ports.[id=9]".  Otherwise - and
+**		  - in a list, elements are matched by a KEY when there is one: the setting
+**		    flagged CFG$M_KEY in the schema, when a schema is given; else ID (or NAME, or
+**		    KEY) when every element of both lists is a group holding it as a scalar,
+**		    unique in its list.  The path of such an element is "ports.[id=9]".  Otherwise - and
 **		    always with CFG$M_POSITIONAL - by position, "list.[2]";
 **		  - an array is a value: compared whole;
 **		  - a node whose type differs (32 and 64-bit integers are one type) is a change of
@@ -78,6 +79,7 @@ struct cfg_diff_t {
 	uint32_t	opts,
 			count,
 			max;
+	int		schema;				/* a schema was given				*/
 	CFG$DENT	*ent;
 };
 
@@ -139,27 +141,18 @@ static void	s_puts	(
 
 
 /*
-**  DESCRIPTION: Append a line made by FAO from a control string and up to 8 parameters.
+**  DESCRIPTION: Append a piece made by FAO from a control string and its parameters, written
+**		plain (see $CFG_FAO); a failure of FAO is remembered in STS of the buffer.
 */
-static void	s_fao	(
-		CFG$BUF		*a_b,
-	const	char		*a_ctl,
-		int		a_cnt,
-	const	fao_prm_t	*a_prm
-			)
-{
-char		l_line[1024];
-fao_desc_t	l_dsc = $FAO_DESC(l_line);
-unsigned short	l_len = 0;
-
-	if ( !(1 & __util$faol(a_ctl, &l_len, &l_dsc, a_prm, a_cnt)) )
-		{
-		a_b->sts = CFG$_BADARG;
-		return;
-		}
-
-	s_put(a_b, l_line, l_len);
-}
+#define	$LISTFAO(b, ctl, ...)	do {								\
+	char		l_line[1024];								\
+	fao_desc_t	l_dsc = $FAO_DESC(l_line);						\
+	unsigned short	l_flen = 0;								\
+												\
+	if ( 1 & $CFG_FAO(ctl, &l_flen, &l_dsc, __VA_ARGS__) )					\
+		s_put(b, l_line, l_flen);							\
+	else	(b)->sts = CFG$_BADARG;								\
+	} while ( 0 )
 
 
 
@@ -275,6 +268,46 @@ CFG$DENT	*l_new;
 
 
 /*
+**  DESCRIPTION: Does every live element of both lists hold the key (a scalar) the schema names?
+**
+**  RETURNS:
+**	the key, NULL - match by position
+*/
+static const char *	s_haskey	(
+		CFG$NODE	*a_old,
+		CFG$NODE	*a_new,
+	const	char		*a_key
+			)
+{
+CFG$NODE	*l_lists[2] = { a_old, a_new }, *l_k, *l_j;
+uint32_t	l_klen;
+
+	if ( !a_key )
+		return	NULL;
+
+	l_klen = (uint32_t) strlen(a_key);
+
+	/* Every element holds it as a scalar, and no two in a list hold the same - else by position */
+	for ( int l = 0; l < 2; l++ )
+		for ( CFG$NODE *l_e = l_lists[l]->child; l_e; l_e = l_e->next )
+			{
+			if ( !$ISLIVE(l_e) )
+				continue;
+
+			if ( (l_e->type != CFG$K_TYPE_GROUP) || !(l_k = cfg$$find(l_e, a_key, l_klen)) || !$ISSCALAR(l_k->type) )
+				return	NULL;
+
+			for ( CFG$NODE *l_f = l_e->next; l_f; l_f = l_f->next )
+				if ( $ISLIVE(l_f) && (l_f->type == CFG$K_TYPE_GROUP) && (l_j = cfg$$find(l_f, a_key, l_klen)) && s_scalar_eq(l_k, l_j) )
+					return	NULL;
+			}
+
+	return	a_key;
+}
+
+
+
+/*
 **  DESCRIPTION: The key of a list, when it has one: the first of ID, NAME, KEY that every live
 **		element of both lists holds as a scalar, unique within its list.
 **
@@ -323,7 +356,7 @@ CFG$NODE	*l_lists[2] = { a_old, a_new }, *l_e, *l_f, *l_k, *l_j;
 
 
 
-static unsigned	s_node	(CFG$DIFF *a_d, CFG$NODE *a_old, CFG$NODE *a_new, CFG$BUF *a_path);
+static unsigned	s_node	(CFG$DIFF *a_d, CFG$NODE *a_old, CFG$NODE *a_new, CFG$BUF *a_path, const CFG$SCHEMA *a_ent);
 
 
 
@@ -337,7 +370,8 @@ static unsigned	s_under	(
 		uint32_t	a_slen,
 		uint32_t	a_op,
 		CFG$NODE	*a_old,
-		CFG$NODE	*a_new
+		CFG$NODE	*a_new,
+	const	CFG$SCHEMA	*a_ent
 			)
 {
 uint32_t	l_save = a_path->len;
@@ -353,7 +387,7 @@ unsigned	l_sts;
 	if ( !(1 & a_path->sts) )
 		return	a_path->sts;
 
-	l_sts = a_op ? s_record(a_d, a_op, a_old, a_new, a_path->p, a_path->len) : s_node(a_d, a_old, a_new, a_path);
+	l_sts = a_op ? s_record(a_d, a_op, a_old, a_new, a_path->p, a_path->len) : s_node(a_d, a_old, a_new, a_path, a_ent);
 
 	a_path->len = l_save;
 	a_path->p[l_save] = '\0';
@@ -414,10 +448,13 @@ static unsigned	s_list	(
 		CFG$DIFF	*a_d,
 		CFG$NODE	*a_old,
 		CFG$NODE	*a_new,
-		CFG$BUF		*a_path
+		CFG$BUF		*a_path,
+	const	CFG$SCHEMA	*a_ent
 			)
 {
-const	char	*l_key = (a_d->opts & CFG$M_POSITIONAL) ? NULL : s_listkey(a_old, a_new);
+const	CFG$SCHEMA	*l_elem = (a_ent && (a_ent->type == CFG$K_TYPE_LIST) && a_ent->sub) ? a_ent->sub : NULL;
+const	char	*l_skey = cfg$$schema_key(l_elem);
+const	char	*l_key = (a_d->opts & CFG$M_POSITIONAL) ? NULL : l_skey ? s_haskey(a_old, a_new, l_skey) : s_listkey(a_old, a_new);
 CFG$NODE	*l_x, *l_y, *l_k, *l_j;
 CFG$BUF		l_step = { NULL, 0, 0, STS$K_SUCCESS };
 unsigned	l_sts = STS$K_SUCCESS;
@@ -438,7 +475,7 @@ uint32_t	l_i = 0, l_klen = l_key ? (uint32_t) strlen(l_key) : 0;
 					break;
 
 			if ( 1 & (l_sts = s_step(l_x, l_key, 0, &l_step)) )
-				l_sts = s_under(a_d, a_path, l_step.p, l_step.len, l_y ? 0 : CFG$K_DIFF_DEL, l_x, l_y);
+				l_sts = s_under(a_d, a_path, l_step.p, l_step.len, l_y ? 0 : CFG$K_DIFF_DEL, l_x, l_y, l_elem);
 			}
 
 		for ( l_y = a_new->child; l_y && (1 & l_sts); l_y = l_y->next )
@@ -453,7 +490,7 @@ uint32_t	l_i = 0, l_klen = l_key ? (uint32_t) strlen(l_key) : 0;
 					break;
 
 			if ( !l_x && (1 & (l_sts = s_step(l_y, l_key, 0, &l_step))) )
-				l_sts = s_under(a_d, a_path, l_step.p, l_step.len, CFG$K_DIFF_ADD, NULL, l_y);
+				l_sts = s_under(a_d, a_path, l_step.p, l_step.len, CFG$K_DIFF_ADD, NULL, l_y, l_elem);
 			}
 		}
 	else	{
@@ -470,7 +507,7 @@ uint32_t	l_i = 0, l_klen = l_key ? (uint32_t) strlen(l_key) : 0;
 				break;
 
 			if ( 1 & (l_sts = s_step(l_x ? l_x : l_y, NULL, l_i, &l_step)) )
-				l_sts = s_under(a_d, a_path, l_step.p, l_step.len, !l_y ? CFG$K_DIFF_DEL : !l_x ? CFG$K_DIFF_ADD : 0, l_x, l_y);
+				l_sts = s_under(a_d, a_path, l_step.p, l_step.len, !l_y ? CFG$K_DIFF_DEL : !l_x ? CFG$K_DIFF_ADD : 0, l_x, l_y, l_elem);
 
 			l_x = l_x ? l_x->next : NULL;
 			l_y = l_y ? l_y->next : NULL;
@@ -491,7 +528,8 @@ static unsigned	s_node	(
 		CFG$DIFF	*a_d,
 		CFG$NODE	*a_old,
 		CFG$NODE	*a_new,
-		CFG$BUF		*a_path
+		CFG$BUF		*a_path,
+	const	CFG$SCHEMA	*a_ent
 			)
 {
 CFG$NODE	*l_x, *l_y;
@@ -503,7 +541,7 @@ int		l_same = (a_old->type == a_new->type) || ($ISINTEGER(a_old->type) && $ISINT
 		return	s_equal(a_old, a_new) ? STS$K_SUCCESS : s_record(a_d, CFG$K_DIFF_MOD, a_old, a_new, a_path->p, a_path->len);
 
 	if ( a_old->type == CFG$K_TYPE_LIST )
-		return	s_list(a_d, a_old, a_new, a_path);
+		return	s_list(a_d, a_old, a_new, a_path, a_ent);
 
 	/* A group: by name - the old settings in their order, then the new ones */
 	for ( l_x = a_old->child; l_x && (1 & l_sts); l_x = l_x->next )
@@ -512,12 +550,13 @@ int		l_same = (a_old->type == a_new->type) || ($ISINTEGER(a_old->type) && $ISINT
 			continue;
 
 		l_y = cfg$$find(a_new, l_x->name, l_x->namelen);
-		l_sts = s_under(a_d, a_path, l_x->name, l_x->namelen, l_y ? 0 : CFG$K_DIFF_DEL, l_x, l_y);
+		l_sts = s_under(a_d, a_path, l_x->name, l_x->namelen, l_y ? 0 : CFG$K_DIFF_DEL, l_x, l_y,
+			(a_ent && (a_ent->type == CFG$K_TYPE_GROUP)) ? cfg$$schema_entry(a_ent->sub, a_old->tree, l_x->name, l_x->namelen) : NULL);
 		}
 
 	for ( l_y = a_new->child; l_y && (1 & l_sts); l_y = l_y->next )
 		if ( $ISLIVE(l_y) && !cfg$$find(a_old, l_y->name, l_y->namelen) )
-			l_sts = s_under(a_d, a_path, l_y->name, l_y->namelen, CFG$K_DIFF_ADD, NULL, l_y);
+			l_sts = s_under(a_d, a_path, l_y->name, l_y->namelen, CFG$K_DIFF_ADD, NULL, l_y, NULL);
 
 	return	l_sts;
 }
@@ -529,6 +568,9 @@ int		l_same = (a_old->type == a_new->type) || ($ISINTEGER(a_old->type) && $ISINT
 **
 **  INPUTS:
 **	a_old,a_new:	the trees
+**	a_schema:	NULL, or the schema of the trees: a list whose elements have a setting
+**			flagged CFG$M_KEY is matched by that key (else by ID, NAME, KEY as
+**			without a schema)
 **	a_opts:		0 or CFG$M_POSITIONAL
 **
 **  OUTPUTS:
@@ -541,13 +583,17 @@ int		l_same = (a_old->type == a_new->type) || ($ISINTEGER(a_old->type) && $ISINT
 unsigned	cfg$diff	(
 		CFG$TREE	*a_old,
 		CFG$TREE	*a_new,
+	const	CFG$SCHEMA	*a_schema,
 		uint32_t	a_opts,
 		CFG$DIFF	**a_diff
 			)
 {
 CFG$DIFF	*l_d;
 CFG$BUF		l_path = { NULL, 0, 0, STS$K_SUCCESS };
+CFG$SCHEMA	l_root;
 unsigned	l_sts;
+
+	memset(&l_root, 0, sizeof(l_root));
 
 	if ( !a_old || !a_new || !a_diff )
 		return	CFG$_BADARG;
@@ -561,10 +607,14 @@ unsigned	l_sts;
 	l_d->old = a_old;
 	l_d->new = a_new;
 	l_d->opts = a_opts;
+	l_d->schema = (a_schema != NULL);
 
 	s_puts(&l_path, "");
 
-	if ( !(1 & (l_sts = l_path.sts)) || !(1 & (l_sts = s_node(l_d, a_old->root, a_new->root, &l_path))) )
+	l_root.type = CFG$K_TYPE_GROUP;
+	l_root.sub = a_schema;
+
+	if ( !(1 & (l_sts = l_path.sts)) || !(1 & (l_sts = s_node(l_d, a_old->root, a_new->root, &l_path, a_schema ? &l_root : NULL))) )
 		{
 		free(l_path.p);
 		cfg$diff_free(l_d);
@@ -879,7 +929,6 @@ static void	s_head	(
 			)
 {
 uint8_t		l_uuid[16];
-fao_prm_t	l_p[3];
 
 	/* A file name may be as long as PATH_MAX: put as it is, not through FAO */
 	s_puts(a_b, a_label);
@@ -890,17 +939,9 @@ fao_prm_t	l_p[3];
 	if ( !(1 & cfg$fingerprint(a_tree, l_uuid)) )
 		memset(l_uuid, 0, sizeof(l_uuid));
 
-	l_p[1] = (fao_prm_t) l_uuid;
-
 	if ( a_tree->src[0]->mtime && !(a_opts & CFG$M_NOTIME) )
-		{
-		l_p[0] = (fao_prm_t) a_tree->src[0]->mtime;
-		s_fao(a_b, "     !%D  UUID !%U!/", 2, l_p);
-		}
-	else	{
-		l_p[0] = (fao_prm_t) l_uuid;
-		s_fao(a_b, "     UUID !%U!/", 1, l_p);
-		}
+		$LISTFAO(a_b, "     !%D  UUID !%U!/", a_tree->src[0]->mtime, l_uuid);
+	else	$LISTFAO(a_b, "     UUID !%U!/", l_uuid);
 }
 
 
@@ -915,7 +956,6 @@ static void	s_side	(
 		CFG$NODE	*a_n
 			)
 {
-fao_prm_t	l_p[2];
 char		*l_txt;
 uint32_t	l_len;
 unsigned	l_sts;
@@ -935,10 +975,7 @@ const	char	*l_file = a_tree->src[0]->path;
 		}
 
 	if ( a_n->line )
-		{
-		l_p[0] = (fao_prm_t) a_n->line;
-		s_fao(a_b, "!6UL   ", 1, l_p);
-		}
+		$LISTFAO(a_b, "!6UL   ", a_n->line);
 	else	s_puts(a_b, "         ");
 
 	s_puts(a_b, a_path);
@@ -1003,7 +1040,6 @@ unsigned	cfg$diff_listing	(
 			)
 {
 CFG$BUF		l_b = { NULL, 0, 0, STS$K_SUCCESS };
-fao_prm_t	l_p[3];
 uint32_t	l_n[4] = { 0, 0, 0, 0 };
 
 	if ( !a_diff || !a_buf || !a_len )
@@ -1011,10 +1047,7 @@ uint32_t	l_n[4] = { 0, 0, 0, 0 };
 
 	if ( a_opts & CFG$M_NOTIME )
 		s_puts(&l_b, "CONFIGURATION DIFFERENCES\n\n");
-	else	{
-		l_p[0] = 0;				/* now					*/
-		s_fao(&l_b, "CONFIGURATION DIFFERENCES!56<!>!%D!/!/", 1, l_p);
-		}
+	else	$LISTFAO(&l_b, "CONFIGURATION DIFFERENCES!56<!>!%D!/!/", 0);	/* 0 - now		*/
 
 	s_head(&l_b, "Old:", a_diff->old, a_opts);
 	s_head(&l_b, "New:", a_diff->new, a_opts);
@@ -1035,15 +1068,11 @@ uint32_t	l_n[4] = { 0, 0, 0, 0 };
 	if ( a_diff->count )
 		s_puts(&l_b, "************\n");
 
-	l_p[0] = a_diff->count;
-	s_fao(&l_b, "!/Number of difference sections found: !UL!/", 1, l_p);
+	$LISTFAO(&l_b, "!/Number of difference sections found: !UL!/", a_diff->count);
+	$LISTFAO(&l_b, "   changed: !UL, added: !UL, removed: !UL!/!/", l_n[CFG$K_DIFF_MOD], l_n[CFG$K_DIFF_ADD], l_n[CFG$K_DIFF_DEL]);
 
-	l_p[0] = l_n[CFG$K_DIFF_MOD];
-	l_p[1] = l_n[CFG$K_DIFF_ADD];
-	l_p[2] = l_n[CFG$K_DIFF_DEL];
-	s_fao(&l_b, "   changed: !UL, added: !UL, removed: !UL!/!/", 3, l_p);
-
-	s_puts(&l_b, (a_diff->opts & CFG$M_POSITIONAL) ? "CONFIGURATION DIFFERENCES /POSITIONAL-\n" : "CONFIGURATION DIFFERENCES /KEYS=(ID,NAME,KEY)-\n");
+	s_puts(&l_b, (a_diff->opts & CFG$M_POSITIONAL) ? "CONFIGURATION DIFFERENCES /POSITIONAL-\n"
+		: a_diff->schema ? "CONFIGURATION DIFFERENCES /SCHEMA-\n" : "CONFIGURATION DIFFERENCES /KEYS=(ID,NAME,KEY)-\n");
 
 	s_puts(&l_b, "    ");
 	s_puts(&l_b, a_diff->old->src[0]->path);
