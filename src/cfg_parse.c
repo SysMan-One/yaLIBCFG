@@ -99,7 +99,7 @@ char		l_msg[96];
 fao_desc_t	l_dsc = $FAO_DESC(l_msg);
 unsigned short	l_len = 0;
 
-	$CFG_FAO("expected !AZ, found !AZ", &l_len, &l_dsc, a_what, cfg$$tokname(a_p->lex.tok));
+	$FAO("expected !AZ, found !AZ", &l_len, &l_dsc, a_what, cfg$$tokname(a_p->lex.tok));
 
 	return	cfg$$error(a_p->tree, CFG$_SYNTAX, a_p->src->no, a_p->lex.tline, a_p->lex.tcol, l_msg, l_len);
 }

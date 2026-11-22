@@ -106,7 +106,7 @@ char		l_num[32];
 fao_desc_t	l_dsc = $FAO_DESC(l_num);
 unsigned short	l_len = 0;
 
-	$CFG_FAO("!SQ", &l_len, &l_dsc, a_val);
+	$FAO("!SQ", &l_len, &l_dsc, a_val);
 	s_add(a_t, l_num, l_len);
 }
 

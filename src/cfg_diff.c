@@ -142,14 +142,14 @@ static void	s_puts	(
 
 /*
 **  DESCRIPTION: Append a piece made by FAO from a control string and its parameters, written
-**		plain (see $CFG_FAO); a failure of FAO is remembered in STS of the buffer.
+**		plain (see $FAO); a failure of FAO is remembered in STS of the buffer.
 */
 #define	$LISTFAO(b, ctl, ...)	do {								\
 	char		l_line[1024];								\
 	fao_desc_t	l_dsc = $FAO_DESC(l_line);						\
 	unsigned short	l_flen = 0;								\
 												\
-	if ( 1 & $CFG_FAO(ctl, &l_flen, &l_dsc, __VA_ARGS__) )					\
+	if ( 1 & $FAO(ctl, &l_flen, &l_dsc, __VA_ARGS__) )					\
 		s_put(b, l_line, l_flen);							\
 	else	(b)->sts = CFG$_BADARG;								\
 	} while ( 0 )
