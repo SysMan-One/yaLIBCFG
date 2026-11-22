@@ -3,7 +3,7 @@
 #
 set(YALIBCFG_K_CORPUS ${CMAKE_CURRENT_SOURCE_DIR}/corpus)
 
-foreach(YALIBCFG_K_T t_roundtrip t_edit t_errors t_diff t_schema)
+foreach(YALIBCFG_K_T t_roundtrip t_edit t_errors t_diff t_schema t_skip)
 	add_executable(${YALIBCFG_K_T} ${YALIBCFG_K_T}.c)
 	target_link_libraries(${YALIBCFG_K_T} PRIVATE yalibcfg)
 	target_compile_options(${YALIBCFG_K_T} PRIVATE -Wall -Wno-unused-parameter)
@@ -29,6 +29,8 @@ add_test(NAME errors COMMAND t_errors)
 add_test(NAME diff COMMAND t_diff)
 target_include_directories(t_schema PRIVATE ${CMAKE_SOURCE_DIR}/src)
 add_test(NAME schema COMMAND t_schema)
+target_include_directories(t_skip PRIVATE ${CMAKE_SOURCE_DIR}/src)
+add_test(NAME skip COMMAND t_skip)
 
 #
 #	The same files through libconfig, when it is there

@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_LEX"
-#define	__IDENT__	"X.01-01"
-#define	__REV__		"1.1.0"
+#define	__IDENT__	"X.01-02"
+#define	__REV__		"1.2.0"
 #define	__FAC__		"CFG"
 
 /*
@@ -35,6 +35,9 @@
 **
 **	X.01-01		22-NOV-2026	RRL
 **		First edition.
+**
+**	X.01-02		22-NOV-2026	RRL
+**		A failed token is CFG$K_TOK_ERROR; its position is where it would begin.
 **
 **--
 */
@@ -75,7 +78,7 @@ const char *	cfg$$tokname	(
 			)
 {
 static	const char	*s_names[] = { "end of file", "name", "integer", "integer", "float", "boolean", "string",
-				"'='", "';'", "','", "'{'", "'}'", "'['", "']'", "'('", "')'", "@include" };
+				"'='", "';'", "','", "'{'", "'}'", "'['", "']'", "'('", "')'", "@include", "an error" };
 
 	return	(a_tok < $ARRSZ(s_names)) ? s_names[a_tok] : "?";
 }
@@ -315,7 +318,11 @@ unsigned	l_sts;
 			for ( ;; )
 				{
 				if ( a_lex->pos + 1 >= l_len )
+					{
+					a_lex->tbeg = l_beg;		/* the bad "token" is the comment		*/
+					a_lex->pos = l_len;
 					return	s_lexerr(a_lex, CFG$_UNTERM, l_line, l_col, "comment", 7);
+					}
 
 				if ( (l_buf[a_lex->pos] == '*') && (l_buf[a_lex->pos + 1] == '/') )
 					{
@@ -535,7 +542,7 @@ l_bad:
 **  RETURNS:
 **	STS$K_SUCCESS, CFG$_SYNTAX, CFG$_UNTERM, CFG$_BADNUM, CFG$_NOMEM
 */
-unsigned	cfg$$lex_next	(
+static unsigned	s_lex_next	(
 		CFG$LEX		*a_lex
 			)
 {
@@ -543,6 +550,11 @@ const	char	*l_buf = a_lex->src->buf;
 uint32_t	l_len = a_lex->src->len;
 unsigned	l_sts;
 char		l_c;
+
+	/* Where the next token would begin, should the whitespace and comments before it fail */
+	a_lex->tbeg = a_lex->pos;
+	a_lex->tline = a_lex->line;
+	a_lex->tcol = a_lex->pos - a_lex->lpos + 1;
 
 	if ( !(1 & (l_sts = s_skip(a_lex))) )
 		return	l_sts;
@@ -578,7 +590,10 @@ char		l_c;
 			for ( a_lex->pos++; ; a_lex->pos++ )
 				{
 				if ( (a_lex->pos >= l_len) || (l_buf[a_lex->pos] == '\n') )
+					{
+					a_lex->pos = (a_lex->pos < l_len) ? a_lex->pos : l_len;	/* a '\' last	*/
 					return	s_lexerr(a_lex, CFG$_UNTERM, a_lex->tline, a_lex->tcol, "string", 6);
+					}
 
 				if ( l_buf[a_lex->pos] == '\\' )
 					{
@@ -650,6 +665,23 @@ char		l_c;
 	a_lex->tend = a_lex->pos;
 
 	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**  DESCRIPTION: Take the next token; after an error there is none: TOK is CFG$K_TOK_ERROR.
+*/
+unsigned	cfg$$lex_next	(
+		CFG$LEX		*a_lex
+			)
+{
+unsigned	l_sts;
+
+	if ( !(1 & (l_sts = s_lex_next(a_lex))) )
+		a_lex->tok = CFG$K_TOK_ERROR;
+
+	return	l_sts;
 }
 
 

@@ -1,7 +1,7 @@
 #ifndef	__YALIBCFGDEF$H__
 #define	__YALIBCFGDEF$H__	1
 
-#define	__YALIBCFGDEF_IDENT__	"X.01-01"
+#define	__YALIBCFGDEF_IDENT__	"X.01-02"
 
 /*
 **++
@@ -20,6 +20,9 @@
 **
 **	X.01-01		22-NOV-2026	RRL
 **		First edition: stage 1 - parse, tree, paths, lossless write.
+**
+**	X.01-02		22-NOV-2026	RRL
+**		CFG$M_SKIPERRS, CFG$K_TYPE_JUNK, CFG$_SKIPPED.
 **
 **--
 */
@@ -99,6 +102,7 @@ enum	{
 	CFG$K_MSG_OPENOUT,			/* CFGTOOL: cannot create the output file	*/
 	CFG$K_MSG_INCMODIFIED,			/* A change in an included file, WRITE_FILE	*/
 	CFG$K_MSG_ARGLONG,			/* CFGTOOL: an argument over 255 octets		*/
+	CFG$K_MSG_SKIPPED,			/* CFG$M_SKIPERRS: bad settings were skipped	*/
 	CFG$K_MSG_MAX				/* End-Of-List					*/
 	};
 
@@ -149,6 +153,7 @@ enum	{
 #define	CFG$_OPENOUT	$CFGSTS(CFG$K_MSG_OPENOUT,	STS$K_ERROR)
 #define	CFG$_INCMODIFIED $CFGSTS(CFG$K_MSG_INCMODIFIED,	STS$K_ERROR)
 #define	CFG$_ARGLONG	$CFGSTS(CFG$K_MSG_ARGLONG,	STS$K_ERROR)
+#define	CFG$_SKIPPED	$CFGSTS(CFG$K_MSG_SKIPPED,	STS$K_INFO)
 
 /*
 **  Node types
@@ -164,6 +169,8 @@ enum	{
 	CFG$K_TYPE_BOOL,			/* true / false					*/
 	CFG$K_TYPE_STRING,			/* "..."					*/
 	CFG$K_TYPE_INCLUDE,			/* @include "file" - kept for the write-back	*/
+	CFG$K_TYPE_JUNK,			/* a bad setting skipped (CFG$M_SKIPERRS) - its	*/
+						/* text kept for the write-back, nothing else	*/
 
 	/* Types of a schema only: strings with a meaning, checked by CFG$VALIDATE */
 	CFG$K_TYPE_KWD		= 32,		/* one of the keywords of KWD			*/
@@ -192,6 +199,7 @@ enum	{
 */
 #define	CFG$M_NOCASE		1		/* Names are looked up regardless of case	*/
 #define	CFG$M_NOINCLUDE		2		/* @include is refused				*/
+#define	CFG$M_SKIPERRS		4		/* a bad setting is skipped, the parse goes on	*/
 
 /*
 **  Comparison (CFG$DIFF): the kinds of a difference, the options

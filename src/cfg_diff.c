@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_DIFF"
-#define	__IDENT__	"X.01-01"
-#define	__REV__		"1.1.0"
+#define	__IDENT__	"X.01-02"
+#define	__REV__		"1.2.0"
 #define	__FAC__		"CFG"
 
 /*
@@ -45,6 +45,9 @@
 **	X.01-01		22-NOV-2026	RRL
 **		First edition.
 **
+**	X.01-02		22-NOV-2026	RRL
+**		JUNK nodes are not compared.
+**
 **--
 */
 
@@ -54,7 +57,7 @@
 
 #include	"cfg_int.h"
 
-#define	$ISLIVE(n)	( !((n)->flags & CFG$M_DELETED) && ((n)->type != CFG$K_TYPE_INCLUDE) )
+#define	$ISLIVE(n)	( !((n)->flags & CFG$M_DELETED) && ((n)->type != CFG$K_TYPE_INCLUDE) && ((n)->type != CFG$K_TYPE_JUNK) )
 #define	$ISSCALAR(t)	( ((t) >= CFG$K_TYPE_INT) && ((t) <= CFG$K_TYPE_STRING) )
 #define	$ISINTEGER(t)	( ((t) == CFG$K_TYPE_INT) || ((t) == CFG$K_TYPE_INT64) )
 

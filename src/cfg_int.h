@@ -37,6 +37,9 @@
 **	X.01-01		22-NOV-2026	RRL
 **		First edition.
 **
+**	X.01-02		22-NOV-2026	RRL
+**		JUNK, CFG$K_TOK_ERROR, CFG$M_OPENJUNK, the skip counters.
+**
 **--
 */
 
@@ -56,6 +59,9 @@
 #define	CFG$M_NEW		0x04			/* made by the program, no source text		*/
 #define	CFG$M_DIRTY		0x08			/* something below has changed			*/
 #define	CFG$M_SUFFIXL		0x10			/* an integer written with the L suffix		*/
+#define	CFG$M_OPENJUNK		0x40			/* a JUNK that runs to the end of its file with	*/
+							/* a bracket, a string or a comment open: new	*/
+							/* settings are written before it, not after	*/
 
 /*
 **  How an integer was written - kept to write a changed value the same way
@@ -85,6 +91,7 @@ typedef	struct cfg_src_t {
 	uint32_t	ncomm;				/* comment spans, sorted			*/
 	uint32_t	*comm;				/* pairs: begin, end				*/
 	uint32_t	commmax;
+	int		orphan;				/* its @include is in a skipped setting		*/
 } CFG$SRC;
 
 struct cfg_node_t {
@@ -135,6 +142,8 @@ typedef	struct cfg_err_t {
 struct cfg_tree_t {
 	uint32_t	opts;
 	int		broken;				/* the parse failed: the tree is for CFG$PUTERRS only */
+	int		mute;				/* CFG$$ERROR records nothing (a skip is going on) */
+	uint32_t	nskipped;			/* bad settings skipped (CFG$M_SKIPERRS)	*/
 	CFG$ARENA	*arena;
 	CFG$NODE	*root;
 	uint32_t	nsrc;
@@ -181,7 +190,8 @@ enum	{
 	CFG$K_TOK_RBRACK,
 	CFG$K_TOK_LPAREN,
 	CFG$K_TOK_RPAREN,
-	CFG$K_TOK_INCLUDE			/* @include					*/
+	CFG$K_TOK_INCLUDE,			/* @include					*/
+	CFG$K_TOK_ERROR				/* the lexer met an error: no token		*/
 	};
 
 typedef	struct cfg_lex_t {

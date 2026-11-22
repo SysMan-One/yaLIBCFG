@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_MSG"
-#define	__IDENT__	"X.01-01"
-#define	__REV__		"1.1.0"
+#define	__IDENT__	"X.01-02"
+#define	__REV__		"1.2.0"
 #define	__FAC__		"CFG"
 
 /*
@@ -25,6 +25,9 @@
 **
 **	X.01-01		22-NOV-2026	RRL
 **		First edition.
+**
+**	X.01-02		22-NOV-2026	RRL
+**		CFG$_SKIPPED; diagnostics muted during a skip; CFG$ERRCOUNT.
 **
 **--
 */
@@ -88,7 +91,8 @@ static	EMSG_RECORD	s_msgtab [] = {
 	$CFGREC(CFG$_CANTSET,	"CANTSET, cannot change !AZ in !AZ"),
 	$CFGREC(CFG$_OPENOUT,	"OPENOUT, cannot create !AZ, errno=!SL"),
 	$CFGREC(CFG$_INCMODIFIED, "INCMODIFIED, a change in an included file cannot go into another file"),
-	$CFGREC(CFG$_ARGLONG,	"ARGLONG, argument !UL is longer than !UL octets")
+	$CFGREC(CFG$_ARGLONG,	"ARGLONG, argument !UL is longer than !UL octets"),
+	$CFGREC(CFG$_SKIPPED,	"SKIPPED, !UL bad setting!%S skipped")
 	};
 
 static	EMSG_RECORD_DESC	s_msgdsc = {
@@ -142,8 +146,9 @@ unsigned	cfg$$error	(
 {
 CFG$ERR	*l_err;
 
-	/* No tree - a scan of a value of a path (CFG_TREE.C): nothing to record */
-	if ( !a_tree )
+	/* No tree - a scan of a value of a path (CFG_TREE.C) - or the skip over a bad setting
+	** (CFG_PARSE.C), where the lexer meets the same error again and again: nothing to record */
+	if ( !a_tree || a_tree->mute )
 		return	a_sts;
 
 	if ( a_tree->nerr >= CFG$K_MAXERRS )
@@ -245,6 +250,37 @@ const	char	*l_file;
 
 	if ( a_tree->ndropped )
 		$PUTMSG_FAO(CFG$_MOREERRS, a_tree->ndropped);
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**  DESCRIPTION: How many diagnostics the tree holds, and how many bad settings a parse with
+**		CFG$M_SKIPERRS skipped.
+**
+**  OUTPUTS:
+**	a_count:	diagnostics, those not kept past CFG$K_MAXERRS too; may be NULL
+**	a_skipped:	settings skipped; may be NULL
+**
+**  RETURNS:
+**	STS$K_SUCCESS, CFG$_BADARG
+*/
+unsigned	cfg$errcount	(
+		CFG$TREE	*a_tree,
+		uint32_t	*a_count,
+		uint32_t	*a_skipped
+			)
+{
+	if ( !a_tree )
+		return	CFG$_BADARG;
+
+	if ( a_count )
+		*a_count = a_tree->nerr + a_tree->ndropped;
+
+	if ( a_skipped )
+		*a_skipped = a_tree->nskipped;
 
 	return	STS$K_SUCCESS;
 }

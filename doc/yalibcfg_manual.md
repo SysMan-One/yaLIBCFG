@@ -2,7 +2,7 @@
 
 **Configuration Trees in the libconfig Syntax**
 
-Software Version: yaLIBCFG X.01-01
+Software Version: yaLIBCFG X.01-02
 
 StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
 
@@ -359,6 +359,29 @@ through `$PUTMSG_FAO` of StarLet:
 ```
 
 Call CFG$INIMSG once, at the start of the program, so that the message texts are there.
+
+**Skipping bad settings.** By default a parse stops at the first error, and the tree is good
+only for CFG$PUTERRS. A program that would rather go on - take what is right in a file and tell
+the user about the rest - asks for CFG$M_SKIPERRS:
+
+```c
+sts = cfg$parse_file(path, CFG$M_SKIPERRS, &tree);
+
+if ( sts == CFG$_SKIPPED )		/* success, with bad settings skipped		*/
+	cfg$puterrs(tree);		/* every one of them, with its position		*/
+else if ( !(sts & 1) )
+	... the file could not be read at all ...
+```
+
+A bad setting is skipped whole - its name, its value, its terminator; inside a group, only that
+setting of the group. It ends at its `;` or `,`, at the bracket that closes its group, or
+before a name that begins a later line: `b =` that lost its value does not take `c = 3;` on
+the line below with it. Its text stays in the tree as it stood: lookups, comparisons, fingerprints
+and schemas do not see it, but CFG$WRITE writes it back, so a file with a mistake written back
+after a change is the same file with that change only. A bad setting that leaves a bracket, a string or a comment
+open to the end of the file takes the rest of the file with it (an unclosed group is skipped as
+a whole); a setting added at that level is written before it, so that it is read back.
+CFG$_SKIPPED is a success (the low bit is set); CFG$ERRCOUNT tells how many were skipped.
 
 ### 3.5 Writing Back
 
@@ -874,7 +897,7 @@ unsigned cfg$parse_file (const char *a_path, uint32_t a_opts, CFG$TREE **a_tree)
 | Argument | Type | Access | Mechanism | Description |
 |---|---|---|---|---|
 | a_path | char | read | by reference, zero-terminated | The file name. |
-| a_opts | uint32_t | read | by value | Options: 0, or a sum of CFG$M_NOCASE (names are looked up regardless of case; `A` and `a` in one group are then duplicates) and CFG$M_NOINCLUDE (`@include` is refused). |
+| a_opts | uint32_t | read | by value | Options: 0, or a sum of CFG$M_NOCASE (names are looked up regardless of case; `A` and `a` in one group are then duplicates), CFG$M_NOINCLUDE (`@include` is refused) and CFG$M_SKIPERRS (a bad setting is skipped and the parse goes on, section 3.4). |
 | a_tree | CFG$TREE * | write | by reference | The new tree. |
 
 **Description**
@@ -884,13 +907,14 @@ Reads the whole file and parses it, with the files it includes, into a new tree.
 The tree is made **even when the parse fails**: it holds the diagnostics for CFG$PUTERRS. So
 call CFG$FREE whenever `*a_tree` is not NULL. It is NULL only when there was no memory.
 
-The parse stops at the first error.
+The parse stops at the first error - unless CFG$M_SKIPERRS is given.
 
 **Condition Values Returned**
 
 | Value | Meaning |
 |---|---|
 | CFG$_NORMAL | Parsed. |
+| CFG$_SKIPPED | Parsed with CFG$M_SKIPERRS, bad settings skipped (a success); their diagnostics are in the tree. |
 | CFG$_OPENIN, CFG$_READERR | The file (or an included one) could not be read. |
 | CFG$_SYNTAX, CFG$_UNTERM, CFG$_BADNUM, CFG$_BADESC, CFG$_DUPNAME, CFG$_MIXARRAY | An error in the text, see Appendix A. |
 | CFG$_INCLUDE, CFG$_INCDEPTH, CFG$_INCLOOP, CFG$_INCTWICE | A problem with `@include`. |
@@ -951,6 +975,23 @@ Puts out every diagnostic recorded in the tree, in the order met, through `$PUTM
 most CFG$K_MAXERRS are kept. NULL is accepted and does nothing.
 
 **Condition Values Returned** - STS$K_SUCCESS.
+
+---
+
+## CFG$ERRCOUNT - Count the Diagnostics of a Tree
+
+**Format**
+
+```c
+unsigned cfg$errcount (CFG$TREE *a_tree, uint32_t *a_count, uint32_t *a_skipped);
+```
+
+**Description**
+
+Tells how many diagnostics the tree holds (those past CFG$K_MAXERRS that were not kept counted
+too) and how many bad settings a parse with CFG$M_SKIPERRS skipped. Either output may be NULL.
+
+**Condition Values Returned** - STS$K_SUCCESS, CFG$_BADARG.
 
 ---
 
@@ -1559,11 +1600,12 @@ Qualifiers that several commands take:
 | /NOINCLUDE | An `@include` is an error (CFG$M_NOINCLUDE) |
 | /OUTPUT=file | Data goes into the file, not to the standard output |
 | /LOG | SET and DELETE report what they did |
+| /SKIPERRORS | Bad settings are skipped (CFG$M_SKIPERRS), each one reported: CHECK then reports all the errors of a file in one run and fails; the other commands go on with the rest of the file, and SET and DELETE keep the text of the bad settings as it stands |
 
 ## CHECK -- Check a File
 
 ```
-CFGTOOL CHECK file [/FINGERPRINT /NOCASE /NOINCLUDE]
+CFGTOOL CHECK file [/FINGERPRINT /NOCASE /NOINCLUDE /SKIPERRORS]
 ```
 
 Parses the file with the files it includes. A correct file is announced with the number of its
@@ -1837,6 +1879,10 @@ The messages of CFGTOOL:
 **NOSETTING, no setting** *path* **in** *file*
 *Explanation:* GET or DELETE found nothing on the path. *User Action:* Check the path: GET the
 group above it.
+
+**SKIPPED,** *n* **bad settings skipped**
+*Explanation:* A success with CFG$M_SKIPERRS (CFGTOOL /SKIPERRORS): the settings named by the
+messages before it were skipped, the rest of the file was taken. *User Action:* Correct them.
 
 **ARGLONG, argument** *n* **is longer than 255 octets**
 *Explanation:* An argument of the command line is too long to be taken whole. *User Action:*

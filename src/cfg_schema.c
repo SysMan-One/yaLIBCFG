@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_SCHEMA"
-#define	__IDENT__	"X.01-01"
-#define	__REV__		"1.1.0"
+#define	__IDENT__	"X.01-02"
+#define	__REV__		"1.2.0"
 #define	__FAC__		"CFG"
 
 /*
@@ -36,6 +36,9 @@
 **	X.01-01		22-NOV-2026	RRL
 **		First edition.
 **
+**	X.01-02		22-NOV-2026	RRL
+**		JUNK nodes are not checked.
+**
 **--
 */
 
@@ -47,7 +50,7 @@
 
 #include	"cfg_int.h"
 
-#define	$ISLIVE(n)	( !((n)->flags & CFG$M_DELETED) && ((n)->type != CFG$K_TYPE_INCLUDE) )
+#define	$ISLIVE(n)	( !((n)->flags & CFG$M_DELETED) && ((n)->type != CFG$K_TYPE_INCLUDE) && ((n)->type != CFG$K_TYPE_JUNK) )
 #define	$ISINTEGER(t)	( ((t) == CFG$K_TYPE_INT) || ((t) == CFG$K_TYPE_INT64) )
 #define	$ISSTRTYPE(t)	( ((t) == CFG$K_TYPE_STRING) || (((t) >= CFG$K_TYPE_KWD) && ((t) <= CFG$K_TYPE_MAC)) )
 #define	$ISSCALARTYPE(t) ( (((t) >= CFG$K_TYPE_INT) && ((t) <= CFG$K_TYPE_STRING)) || $ISSTRTYPE(t) )

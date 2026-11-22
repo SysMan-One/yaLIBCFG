@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFGTOOL"
-#define	__IDENT__	"X.01-01"
-#define	__REV__		"1.1.0"
+#define	__IDENT__	"X.01-02"
+#define	__REV__		"1.2.0"
 #define	__FAC__		"CFG"
 
 /*
@@ -28,6 +28,11 @@
 **		written through a temporary file and a rename).  SET and DELETE write the file
 **		back in place, keeping its comments and layout.
 **
+**		/SKIPERRORS (every command): bad settings are skipped (CFG$M_SKIPERRS), each one
+**		told; CHECK then tells all the errors of a file in one run, and fails; the other
+**		commands go on with the rest of the file - SET and DELETE keep the text of the bad
+**		settings as it stands.
+**
 **		An argument is at most 255 octets (CLI_ROUTINES keeps a value in an ASC); a
 **		value or a path that begins with '/' or '--' is taken for a qualifier unless it
 **		is put in double quotes: '"/var/log"'.
@@ -43,6 +48,9 @@
 **
 **	X.01-01		22-NOV-2026	RRL
 **		First edition: CHECK, FORMAT, DIFF, GET, SET, DELETE, HELP.
+**
+**	X.01-02		22-NOV-2026	RRL
+**		/SKIPERRORS on every command.
 **
 **--
 */
@@ -87,6 +95,7 @@ static	CLI_PQDESC	s_check_q [] = {
 	{ .name = {$ASCINI("nocase")},      .type = CLI$K_OPT, .pn = CLI$K_QUAL },
 	{ .name = {$ASCINI("include")},     .type = CLI$K_OPT, .pn = CLI$K_QUAL, .flag = CLI$M_NEGATABLE },
 	{ .name = {$ASCINI("fingerprint")}, .type = CLI$K_OPT, .pn = CLI$K_QUAL },
+	{ .name = {$ASCINI("skiperrors")}, .type = CLI$K_OPT, .pn = CLI$K_QUAL },
 	{ .name = {0} }
 	};
 
@@ -98,6 +107,7 @@ static	CLI_PQDESC	s_format_q [] = {
 	{ .name = {$ASCINI("nocase")},  .type = CLI$K_OPT,  .pn = CLI$K_QUAL },
 	{ .name = {$ASCINI("include")}, .type = CLI$K_OPT,  .pn = CLI$K_QUAL, .flag = CLI$M_NEGATABLE },
 	{ .name = {$ASCINI("output")},  .type = CLI$K_FILE, .pn = CLI$K_QUAL },
+	{ .name = {$ASCINI("skiperrors")}, .type = CLI$K_OPT, .pn = CLI$K_QUAL },
 	{ .name = {0} }
 	};
 
@@ -111,6 +121,7 @@ static	CLI_PQDESC	s_diff_q [] = {
 	{ .name = {$ASCINI("output")},     .type = CLI$K_FILE, .pn = CLI$K_QUAL },
 	{ .name = {$ASCINI("positional")}, .type = CLI$K_OPT,  .pn = CLI$K_QUAL },
 	{ .name = {$ASCINI("notime")},     .type = CLI$K_OPT,  .pn = CLI$K_QUAL },
+	{ .name = {$ASCINI("skiperrors")}, .type = CLI$K_OPT, .pn = CLI$K_QUAL },
 	{ .name = {0} }
 	};
 
@@ -122,6 +133,7 @@ static	CLI_PQDESC	s_get_p [] = {
 static	CLI_PQDESC	s_get_q [] = {
 	{ .name = {$ASCINI("nocase")}, .type = CLI$K_OPT, .pn = CLI$K_QUAL },
 	{ .name = {$ASCINI("flat")},   .type = CLI$K_OPT, .pn = CLI$K_QUAL },
+	{ .name = {$ASCINI("skiperrors")}, .type = CLI$K_OPT, .pn = CLI$K_QUAL },
 	{ .name = {0} }
 	};
 
@@ -136,6 +148,7 @@ static	CLI_PQDESC	s_set_q [] = {
 	{ .name = {$ASCINI("type")},   .type = CLI$K_KWD,  .pn = CLI$K_QUAL, .kwd = s_types, .defval = {$ASCINI("AUTO")} },
 	{ .name = {$ASCINI("output")}, .type = CLI$K_FILE, .pn = CLI$K_QUAL },
 	{ .name = {$ASCINI("log")},    .type = CLI$K_OPT,  .pn = CLI$K_QUAL },
+	{ .name = {$ASCINI("skiperrors")}, .type = CLI$K_OPT, .pn = CLI$K_QUAL },
 	{ .name = {0} }
 	};
 
@@ -148,6 +161,7 @@ static	CLI_PQDESC	s_delete_q [] = {
 	{ .name = {$ASCINI("nocase")}, .type = CLI$K_OPT,  .pn = CLI$K_QUAL },
 	{ .name = {$ASCINI("output")}, .type = CLI$K_FILE, .pn = CLI$K_QUAL },
 	{ .name = {$ASCINI("log")},    .type = CLI$K_OPT,  .pn = CLI$K_QUAL },
+	{ .name = {$ASCINI("skiperrors")}, .type = CLI$K_OPT, .pn = CLI$K_QUAL },
 	{ .name = {0} }
 	};
 
@@ -362,8 +376,9 @@ static unsigned	s_load	(
 		CFG$TREE	**a_tree
 			)
 {
-uint32_t	l_opts = 0;
+uint32_t	l_opts = 0, l_skipped = 0;
 unsigned	l_sts;
+CLI_PQDESC	*l_qskip;
 
 	if ( a_qnocase && s_present(a_ctx, a_qnocase) )
 		l_opts |= CFG$M_NOCASE;
@@ -371,11 +386,28 @@ unsigned	l_sts;
 	if ( a_qinclude && s_negated(a_ctx, a_qinclude) )
 		l_opts |= CFG$M_NOINCLUDE;
 
+	/* /SKIPERRORS - every verb has it, the last of its qualifiers (see the tables) */
+	for ( l_qskip = a_qnocase; l_qskip && $ASCLEN(&l_qskip->name); l_qskip++ )
+		if ( ($ASCLEN(&l_qskip->name) == 10) && !memcmp($ASCPTR(&l_qskip->name), "skiperrors", 10) )
+			break;
+
+	if ( l_qskip && $ASCLEN(&l_qskip->name) && s_present(a_ctx, l_qskip) )
+		l_opts |= CFG$M_SKIPERRS;
+
 	if ( !(1 & (l_sts = cfg$parse_file(a_path, l_opts, a_tree))) )
 		{
 		cfg$puterrs(*a_tree);
 		cfg$free(*a_tree);
 		*a_tree = NULL;
+		return	l_sts;
+		}
+
+	/* Bad settings skipped: every one of them told, then the count */
+	if ( l_sts == CFG$_SKIPPED )
+		{
+		cfg$puterrs(*a_tree);
+		cfg$errcount(*a_tree, NULL, &l_skipped);
+		$PUTMSG_FAO(CFG$_SKIPPED, l_skipped);
 		}
 
 	return	l_sts;
@@ -433,6 +465,13 @@ unsigned	l_sts;
 		return	(int) l_sts;
 
 	cfg$root(l_tree, &l_root);
+
+	/* With /SKIPERRORS a file with bad settings has been told about in full - it is not correct */
+	if ( l_sts == CFG$_SKIPPED )
+		{
+		cfg$free(l_tree);
+		return	(int) CFG$_INVALID;
+		}
 
 	if ( 1 & (l_sts = cfg$fingerprint(l_tree, l_uuid)) )
 		{
@@ -756,6 +795,8 @@ static	const char	s_text[] =
 	"  CFGTOOL SET     file path value     [/TYPE=AUTO|STRING /OUTPUT=file /LOG /NOCASE]\n"
 	"  CFGTOOL DELETE  file path           [/OUTPUT=file /LOG /NOCASE]\n"
 	"\n"
+	"Every command takes /SKIPERRORS: bad settings are skipped (each one reported) - CHECK then\n"
+	"reports all the errors of a file at once.\n"
 	"A path: system.hostname, vlans.[1], ports.[id=9].mtu.  A qualifier may be written --name too.\n"
 	"Exit status: 0 - success (DIFF: no differences), 1 - DIFF found differences, 2 - an error.\n"
 	"The parameters and qualifiers of a command: CFGTOOL <command> /HELP.  All of it: HELP CFGTOOL.\n";

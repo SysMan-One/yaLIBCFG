@@ -14,6 +14,7 @@
 #
 #		22-NOV-2026	RRL	X.01-01 : First edition - stage 1: parse, tree, paths,
 #					lossless write; round-trip, edit, error tests.
+#		22-NOV-2026	RRL	X.01-02 : CFG$M_SKIPERRS - skip bad settings; CFGTOOL /SKIPERRORS.
 #
 #---
 cmake_minimum_required(VERSION 3.16)

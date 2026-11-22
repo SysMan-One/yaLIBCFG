@@ -43,6 +43,18 @@ inside the quotes of the shell:
 $ cfgtool set router.cfg system.logdir '"/var/log"'
 ```
 
+## /SKIPERRORS -- go on past bad settings
+
+Every command takes it. A bad setting is skipped whole and
+reported, the rest of the file is taken. CHECK /SKIPERRORS reports
+all the errors of a file in one run (and fails); GET, SET, DELETE,
+DIFF and FORMAT work with the rest of the file. SET and DELETE write
+the file back with the bad settings as they stand.
+
+```
+$ cfgtool check router.cfg /skiperrors
+```
+
 ## CHECK -- check a file
 
 ```
@@ -219,6 +231,10 @@ an element on the path is missing (elements are never made).
 ### DIFFERENT, IDENTICAL
 
 What DIFF found.
+
+### SKIPPED
+
+/SKIPERRORS skipped the bad settings reported before it.
 
 ### INCMODIFIED
 

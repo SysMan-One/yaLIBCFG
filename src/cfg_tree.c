@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_TREE"
-#define	__IDENT__	"X.01-01"
-#define	__REV__		"1.1.0"
+#define	__IDENT__	"X.01-02"
+#define	__REV__		"1.2.0"
 #define	__FAC__		"CFG"
 
 /*
@@ -27,6 +27,9 @@
 **	X.01-01		22-NOV-2026	RRL
 **		First edition.
 **
+**	X.01-02		22-NOV-2026	RRL
+**		JUNK nodes are not live: no lookup, no count, no edit.
+**
 **--
 */
 
@@ -38,7 +41,7 @@
 
 #include	"cfg_int.h"
 
-#define	$ISLIVE(n)	( !((n)->flags & CFG$M_DELETED) && ((n)->type != CFG$K_TYPE_INCLUDE) )
+#define	$ISLIVE(n)	( !((n)->flags & CFG$M_DELETED) && ((n)->type != CFG$K_TYPE_INCLUDE) && ((n)->type != CFG$K_TYPE_JUNK) )
 #define	$ISSCALAR(t)	( ((t) >= CFG$K_TYPE_INT) && ((t) <= CFG$K_TYPE_STRING) )
 #define	$ISINTEGER(t)	( ((t) == CFG$K_TYPE_INT) || ((t) == CFG$K_TYPE_INT64) )
 
@@ -137,7 +140,7 @@ CFG$NODE	*l_node;
 
 		a_parent->last = l_node;
 
-		if ( a_type != CFG$K_TYPE_INCLUDE )
+		if ( (a_type != CFG$K_TYPE_INCLUDE) && (a_type != CFG$K_TYPE_JUNK) )
 			a_parent->count++;
 		}
 
@@ -1253,7 +1256,7 @@ unsigned	cfg$delete	(
 {
 CFG$NODE	*l_p;
 
-	if ( !a_node || !(l_p = a_node->parent) || (a_node->type == CFG$K_TYPE_INCLUDE) || (a_node->flags & CFG$M_DELETED) )
+	if ( !a_node || !(l_p = a_node->parent) || (a_node->type == CFG$K_TYPE_INCLUDE) || (a_node->type == CFG$K_TYPE_JUNK) || (a_node->flags & CFG$M_DELETED) )
 		return	CFG$_BADARG;
 
 	l_p->count--;

@@ -122,6 +122,20 @@ string(REPEAT "a" 300 LONG)
 RUN(2 "" set t.cfg q ${LONG})
 RUN(2 "" format t.cfg /output=)
 
+#	/SKIPERRORS: CHECK tells every error and fails; GET and SET work around the bad settings
+file(WRITE ${WORK}/bad.cfg "a = 1;\nb = ;\nc = 3;\nd = $;\n")
+RUN(2 "" check bad.cfg)
+RUN(2 "" check bad.cfg /skiperrors)
+if(NOT LASTERR MATCHES "line 2 column 5" OR NOT LASTERR MATCHES "line 4 column 5" OR NOT LASTERR MATCHES "SKIPPED, 2 bad settings skipped")
+	message(FATAL_ERROR "check /skiperrors did not tell both errors:\n${LASTERR}")
+endif()
+RUN(0 "3\n" get bad.cfg c /skiperrors)
+RUN(0 "" set bad.cfg c 4 /skiperrors)
+file(READ ${WORK}/bad.cfg GOT)
+if(NOT GOT STREQUAL "a = 1;\nb = ;\nc = 4;\nd = $;\n")
+	message(FATAL_ERROR "set /skiperrors did not keep the bad settings:\n${GOT}")
+endif()
+
 #	HELP, errors of the command line
 RUN(0 IGNORE help)
 RUN(2 "" bogus)

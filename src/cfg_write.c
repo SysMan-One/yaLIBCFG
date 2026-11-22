@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_WRITE"
-#define	__IDENT__	"X.01-01"
-#define	__REV__		"1.1.0"
+#define	__IDENT__	"X.01-02"
+#define	__REV__		"1.2.0"
 #define	__FAC__		"CFG"
 
 /*
@@ -40,6 +40,9 @@
 **
 **	X.01-01		22-NOV-2026	RRL
 **		First edition.
+**
+**	X.01-02		22-NOV-2026	RRL
+**		JUNK written raw; new settings go before an open JUNK; a source no node refers to is written as read.
 **
 **--
 */
@@ -639,7 +642,7 @@ int		l_flat, l_first = 1;
 			s_puts(a_o, "{");
 
 			for ( l_c = a_n->child; l_c; l_c = l_c->next )
-				if ( $ISLIVE(l_c) && (l_c->type != CFG$K_TYPE_INCLUDE) )
+				if ( $ISLIVE(l_c) && (l_c->type != CFG$K_TYPE_INCLUDE) && (l_c->type != CFG$K_TYPE_JUNK) )
 					{
 					s_puts(a_o, " ");
 					s_gen_node(a_o, l_c, a_indent);
@@ -653,7 +656,7 @@ int		l_flat, l_first = 1;
 		s_puts(a_o, a_o->nl);
 
 		for ( l_c = a_n->child; l_c; l_c = l_c->next )
-			if ( $ISLIVE(l_c) && (l_c->type != CFG$K_TYPE_INCLUDE) )
+			if ( $ISLIVE(l_c) && (l_c->type != CFG$K_TYPE_INCLUDE) && (l_c->type != CFG$K_TYPE_JUNK) )
 				{
 				s_puts(a_o, l_in);
 				s_gen_node(a_o, l_c, l_in);
@@ -775,7 +778,7 @@ unsigned	cfg$node_text	(
 {
 CFG$OUT	l_o;
 
-	if ( !a_node || !a_buf || !a_len || (a_node->type == CFG$K_TYPE_INCLUDE) || (a_node->flags & CFG$M_DELETED) )
+	if ( !a_node || !a_buf || !a_len || (a_node->type == CFG$K_TYPE_INCLUDE) || (a_node->type == CFG$K_TYPE_JUNK) || (a_node->flags & CFG$M_DELETED) )
 		return	CFG$_BADARG;
 
 	memset(&l_o, 0, sizeof(l_o));
@@ -839,7 +842,7 @@ CFG$OUT	l_o;
 	strcpy(l_o.unit, "\t");
 
 	for ( CFG$NODE *l_c = a_tree->root->child; l_c; l_c = l_c->next )
-		if ( $ISLIVE(l_c) && (l_c->type != CFG$K_TYPE_INCLUDE) )
+		if ( $ISLIVE(l_c) && (l_c->type != CFG$K_TYPE_INCLUDE) && (l_c->type != CFG$K_TYPE_JUNK) )
 			{
 			s_gen_node(&l_o, l_c, "");
 			s_puts(&l_o, "\n");
@@ -981,7 +984,7 @@ int		l_first = 1, l_pad;
 		return;
 		}
 
-	if ( !(a_n->flags & CFG$M_DIRTY) || $ISSCALAR(a_n->type) || (a_n->type == CFG$K_TYPE_INCLUDE) )
+	if ( !(a_n->flags & CFG$M_DIRTY) || $ISSCALAR(a_n->type) || (a_n->type == CFG$K_TYPE_INCLUDE) || (a_n->type == CFG$K_TYPE_JUNK) )
 		{
 		s_put(a_o, l_buf + a_n->vbeg, a_n->vend - a_n->vbeg);
 		return;
@@ -1126,17 +1129,48 @@ CFG$SRC		*l_src = a_o->tree->src[a_srcno];
 const	char	*l_buf = l_src->buf;
 char		l_indent[CFG$K_MAXINDENT], l_base[CFG$K_MAXINDENT];
 int		l_ml, l_have = 0;
+CFG$NODE	*l_open = NULL;
 
 	/* Spread over lines: a file, or brackets with a newline between them */
 	l_ml = !a_cont->parent || (a_cont->srcno != a_srcno) || (a_end > a_cur && memchr(l_buf + a_cur, '\n', a_end - a_cur));
+
+	/*
+	** A skipped setting that leaves a bracket, a string or a comment open to the end of the
+	** file: a new setting written after it would be read as a part of it - the new ones go
+	** before it.
+	*/
+	for ( CFG$NODE *l_c = a_cont->child; l_c && !l_open; l_c = l_c->next )
+		if ( (l_c->srcno == a_srcno) && (l_c->type == CFG$K_TYPE_JUNK) && (l_c->flags & CFG$M_OPENJUNK) )
+			l_open = l_c;
 
 	for ( CFG$NODE *l_c = a_cont->child; l_c; l_c = l_c->next )
 		{
 		if ( l_c->srcno != a_srcno )
 			continue;
 
+		if ( l_c == l_open )
+			{
+			s_put(a_o, l_buf + a_cur, l_c->lead - a_cur);
+			a_cur = l_c->lead;
+
+			for ( CFG$NODE *l_n = l_c->next; l_n; l_n = l_n->next )
+				if ( (l_n->srcno == a_srcno) && (l_n->flags & CFG$M_NEW) )
+					{
+					if ( !l_have )
+						{
+						l_indent[0] = '\0';
+						l_have = 1;
+						}
+
+					s_newnode(a_o, l_n, 1, l_indent);
+					}
+			}
+
 		if ( l_c->flags & CFG$M_NEW )
 			{
+			if ( l_open )
+				continue;			/* written before the open JUNK		*/
+
 			if ( !l_have )
 				{
 				/* No sibling from the file to copy the indentation from */
@@ -1319,10 +1353,13 @@ CFG$NODE	*l_cont = NULL, *l_inc;
 	else if ( (l_inc = s_find_include(a_tree->root, a_srcno)) )
 		l_cont = l_inc->parent;
 
+	/*
+	** No node refers to it: its @include is a part of a bad setting skipped by CFG$M_SKIPERRS -
+	** nothing in it can have changed, it is written as it was read
+	*/
 	if ( !l_cont )
-		return	CFG$_BADARG;
-
-	s_children(&l_o, l_cont, a_srcno, 0, a_tree->src[a_srcno]->len);
+		s_put(&l_o, a_tree->src[a_srcno]->buf, a_tree->src[a_srcno]->len);
+	else	s_children(&l_o, l_cont, a_srcno, 0, a_tree->src[a_srcno]->len);
 
 	if ( !(1 & l_o.sts) )
 		{
