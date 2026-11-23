@@ -1,7 +1,7 @@
 #ifndef	__YALIBCFGDEF$H__
 #define	__YALIBCFGDEF$H__	1
 
-#define	__YALIBCFGDEF_IDENT__	"X.01-04"
+#define	__YALIBCFGDEF_IDENT__	"X.01-05"
 
 /*
 **++
@@ -39,6 +39,9 @@
 **	X.01-04		23-NOV-2026	RRL
 **		CFG$M_FALLBACK: a bad value of the setting is a warning, the program takes its
 **		default (CFG$_FALLBACK from CFG$GET_*); CFG$DIAGCOUNT.
+**
+**	X.01-05		23-NOV-2026	RRL
+**		CFG$M_DUPWARN: a setting written twice is a warning, the first one stands.
 **
 **--
 */
@@ -220,6 +223,8 @@ enum	{
 #define	CFG$M_NOCASE		1		/* Names are looked up regardless of case	*/
 #define	CFG$M_NOINCLUDE		2		/* @include is refused				*/
 #define	CFG$M_SKIPERRS		4		/* a bad setting is skipped, the parse goes on	*/
+#define	CFG$M_DUPWARN		8		/* a setting written twice is a warning (DUPNAME	*/
+						/* at W), the first one stands			*/
 
 /*
 **  Comparison (CFG$DIFF): the kinds of a difference, the options

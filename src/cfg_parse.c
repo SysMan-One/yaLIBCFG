@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_PARSE"
-#define	__IDENT__	"X.01-03ECO01"
-#define	__REV__		"1.3.1"
+#define	__IDENT__	"X.01-05"
+#define	__REV__		"1.5.0"
 #define	__FAC__		"CFG"
 
 /*
@@ -52,6 +52,11 @@
 **	X.01-03ECO01	22-NOV-2026	RRL
 **		The width of an integer goes into its node.
 **
+**	X.01-05		23-NOV-2026	RRL
+**		CFG$M_DUPWARN: a setting written twice is a warning, the first one stands, the
+**		second is read (its syntax counts) and kept as a JUNK node for the write-back,
+**		its name with it (CFG$M_DUPJUNK); what it includes may be included again.
+**
 **--
 */
 
@@ -80,10 +85,13 @@ typedef	struct cfg_parse_t {
 			stnsrc;				/* sources loaded before it			*/
 	int		unterm;				/* S_SKIPNEXT went over a string or a comment	*/
 							/* not closed					*/
+	int		indup;				/* inside the second of a setting written twice	*/
+							/* (CFG$M_DUPWARN): it may include a file again	*/
 } CFG$PARSE;
 
 static unsigned	s_settings	(CFG$PARSE *a_p, CFG$NODE *a_cont, uint32_t a_floor, uint32_t a_endtok);
 static unsigned	s_value		(CFG$PARSE *a_p, CFG$NODE *a_node, uint32_t a_floor);
+static uint32_t	s_countjunk	(CFG$NODE *a_node);
 
 
 
@@ -545,7 +553,10 @@ const	char	*l_slash;
 	** The same file twice: its settings would stand in two places, and a write-back of the
 	** two could not both go into the one file - refused.
 	*/
-	for ( uint32_t i = 0; i + 1 < a_p->tree->nsrc; i++ )
+	for ( l_up = a_p; l_up && !l_up->indup; l_up = l_up->up )
+		;
+
+	for ( uint32_t i = 0; !l_up && (i + 1 < a_p->tree->nsrc); i++ )
 		if ( !a_p->tree->src[i]->orphan && l_isrc->real && a_p->tree->src[i]->real && !strcmp(l_isrc->real, a_p->tree->src[i]->real) )
 			{
 			s_unload(a_p->tree, l_isrc);
@@ -602,47 +613,20 @@ unsigned	l_sts;
 
 
 /*
-**  DESCRIPTION: One setting at the current token (a name).
-**
-**  INPUTS:
-**	a_p:		the parse
-**	a_cont:		the group
-**	a_floor:	end of the previous sibling
-**
-**  OUTPUTS:
-**	a_end:		end of the setting's text
+**  DESCRIPTION: The rest of a setting after its name: '=', the value, the ';' or ','.
 **
 **  RETURNS:
 **	STS$K_SUCCESS or a condition value of the parse
 */
-static unsigned	s_setting	(
+static unsigned	s_setting_value	(
 		CFG$PARSE	*a_p,
-		CFG$NODE	*a_cont,
-		uint32_t	a_floor,
+		CFG$NODE	*a_node,
 		uint32_t	*a_end
 			)
 {
-CFG$NODE	*l_node;
+CFG$NODE	*l_node = a_node;
 unsigned	l_sts;
-uint32_t	l_nlen = a_p->lex.tend - a_p->lex.tbeg, l_after;
-const	char	*l_name = a_p->src->buf + a_p->lex.tbeg;
-
-	if ( l_nlen > CFG$K_MAXNAME )
-		return	cfg$$error(a_p->tree, CFG$_TOOBIG, a_p->src->no, a_p->lex.tline, a_p->lex.tcol, "setting name", 12);
-
-	if ( cfg$$find(a_cont, l_name, l_nlen) )
-		return	cfg$$error(a_p->tree, CFG$_DUPNAME, a_p->src->no, a_p->lex.tline, a_p->lex.tcol, l_name, l_nlen);
-
-	if ( !(l_node = cfg$$node(a_p->tree, a_cont, CFG$K_TYPE_NONE)) )
-		return	CFG$_NOMEM;
-
-	l_node->srcno = a_p->src->no;
-	l_node->name = l_name;
-	l_node->namelen = (uint8_t) l_nlen;
-	l_node->line = a_p->lex.tline;
-	l_node->col = a_p->lex.tcol;
-	l_node->beg = a_p->lex.tbeg;
-	l_node->lead = s_lead(a_p->src, a_floor, l_node->beg);
+uint32_t	l_after;
 
 	if ( !(1 & (l_sts = s_next(a_p))) )
 		return	l_sts;
@@ -671,6 +655,93 @@ const	char	*l_name = a_p->src->buf + a_p->lex.tbeg;
 
 	l_node->end = s_tail(a_p->src, l_after);
 	*a_end = l_node->end;
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+/*
+**  DESCRIPTION: One setting at the current token (a name).
+**
+**  INPUTS:
+**	a_p:		the parse
+**	a_cont:		the group
+**	a_floor:	end of the previous sibling
+**
+**  OUTPUTS:
+**	a_end:		end of the setting's text
+**
+**  RETURNS:
+**	STS$K_SUCCESS or a condition value of the parse
+*/
+static unsigned	s_setting	(
+		CFG$PARSE	*a_p,
+		CFG$NODE	*a_cont,
+		uint32_t	a_floor,
+		uint32_t	*a_end
+			)
+{
+CFG$NODE	*l_node;
+unsigned	l_sts;
+uint32_t	l_nlen = a_p->lex.tend - a_p->lex.tbeg;
+const	char	*l_name = a_p->src->buf + a_p->lex.tbeg;
+uint32_t	l_nsrc0;
+int		l_dup;
+
+	if ( l_nlen > CFG$K_MAXNAME )
+		return	cfg$$error(a_p->tree, CFG$_TOOBIG, a_p->src->no, a_p->lex.tline, a_p->lex.tcol, "setting name", 12);
+
+	/* Written twice: an error - or, with CFG$M_DUPWARN, a warning, and the second is read and set aside */
+	if ( (l_dup = !!cfg$$find(a_cont, l_name, l_nlen)) && !(a_p->tree->opts & CFG$M_DUPWARN) )
+		return	cfg$$error(a_p->tree, CFG$_DUPNAME, a_p->src->no, a_p->lex.tline, a_p->lex.tcol, l_name, l_nlen);
+
+	if ( !(l_node = cfg$$node(a_p->tree, a_cont, CFG$K_TYPE_NONE)) )
+		return	CFG$_NOMEM;
+
+	l_node->srcno = a_p->src->no;
+	l_node->name = l_name;
+	l_node->namelen = (uint8_t) l_nlen;
+	l_node->line = a_p->lex.tline;
+	l_node->col = a_p->lex.tcol;
+	l_node->beg = a_p->lex.tbeg;
+	l_node->lead = s_lead(a_p->src, a_floor, l_node->beg);
+
+	/* The second of two: what it includes is nobody's afterwards, it may be included again */
+	l_nsrc0 = a_p->tree->nsrc;
+	a_p->indup += l_dup;
+	l_sts = s_setting_value(a_p, l_node, a_end);
+	a_p->indup -= l_dup;
+
+	if ( !(1 & l_sts) )
+		return	l_sts;
+
+	/*
+	** The second of a setting written twice (CFG$M_DUPWARN): the first one stands.  The node keeps
+	** its text for the write-back as a JUNK one - seen by nothing else, as a skipped setting is.
+	*/
+	if ( l_dup )
+		{
+		char		l_txt[CFG$K_MAXNAME + 32];
+		uint32_t	l_tlen = l_nlen;
+
+		memcpy(l_txt, l_name, l_nlen);
+		memcpy(l_txt + l_tlen, " - the first one is taken", 25);
+		l_tlen += 25;
+
+		cfg$$error(a_p->tree, $CFGSTS(CFG$K_MSG_DUPNAME, STS$K_WARN), l_node->srcno, l_node->line, l_node->col, l_txt, l_tlen);
+
+		a_cont->count--;
+		a_p->tree->nskipped -= s_countjunk(l_node);
+		l_node->child = l_node->last = NULL;
+		l_node->count = 0;
+		l_node->type = CFG$K_TYPE_JUNK;
+		l_node->flags = CFG$M_DUPJUNK;			/* the name stays: CFG$DELETE of the first	*/
+		a_p->tree->nskipped++;				/* takes this one with it (CFG_TREE.C)		*/
+
+		for ( uint32_t i = l_nsrc0; i < a_p->tree->nsrc; i++ )
+			a_p->tree->src[i]->orphan = 1;
+		}
 
 	return	STS$K_SUCCESS;
 }

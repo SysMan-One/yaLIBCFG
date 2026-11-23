@@ -2,7 +2,7 @@
 
 **Configuration Trees in the libconfig Syntax**
 
-Software Version: yaLIBCFG X.01-04
+Software Version: yaLIBCFG X.01-05
 
 StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
 
@@ -949,7 +949,7 @@ unsigned cfg$parse_file (const char *a_path, uint32_t a_opts, CFG$TREE **a_tree)
 | Argument | Type | Access | Mechanism | Description |
 |---|---|---|---|---|
 | a_path | char | read | by reference, zero-terminated | The file name. |
-| a_opts | uint32_t | read | by value | Options: 0, or a sum of CFG$M_NOCASE (names are looked up regardless of case; `A` and `a` in one group are then duplicates), CFG$M_NOINCLUDE (`@include` is refused) and CFG$M_SKIPERRS (a bad setting is skipped and the parse goes on, section 3.4). |
+| a_opts | uint32_t | read | by value | Options: 0, or a sum of CFG$M_NOCASE (names are looked up regardless of case; `A` and `a` in one group are then duplicates), CFG$M_NOINCLUDE (`@include` is refused), CFG$M_SKIPERRS (a bad setting is skipped and the parse goes on, section 3.4) and CFG$M_DUPWARN (a setting written twice in a group is a warning, CFG-W-DUPNAME "... - the first one is taken": the first stands, the second is kept only for the write-back). |
 | a_tree | CFG$TREE * | write | by reference | The new tree. |
 
 **Description**
@@ -966,7 +966,7 @@ The parse stops at the first error - unless CFG$M_SKIPERRS is given.
 | Value | Meaning |
 |---|---|
 | CFG$_NORMAL | Parsed. |
-| CFG$_SKIPPED | Parsed with CFG$M_SKIPERRS, bad settings skipped (a success); their diagnostics are in the tree. |
+| CFG$_SKIPPED | Parsed with CFG$M_SKIPERRS or CFG$M_DUPWARN, settings skipped (a success); their diagnostics are in the tree. |
 | CFG$_OPENIN, CFG$_READERR | The file (or an included one) could not be read. |
 | CFG$_SYNTAX, CFG$_UNTERM, CFG$_BADNUM, CFG$_BADESC, CFG$_DUPNAME, CFG$_MIXARRAY | An error in the text, see Appendix A. |
 | CFG$_INCLUDE, CFG$_INCDEPTH, CFG$_INCLOOP, CFG$_INCTWICE | A problem with `@include`. |
@@ -1041,7 +1041,7 @@ unsigned cfg$errcount (CFG$TREE *a_tree, uint32_t *a_count, uint32_t *a_skipped)
 **Description**
 
 Tells how many diagnostics the tree holds (those past CFG$K_MAXERRS that were not kept counted
-too) and how many bad settings a parse with CFG$M_SKIPERRS skipped. Either output may be NULL.
+too) and how many settings a parse with CFG$M_SKIPERRS or CFG$M_DUPWARN skipped. Either output may be NULL.
 
 **Condition Values Returned** - STS$K_SUCCESS, CFG$_BADARG.
 
@@ -1815,7 +1815,10 @@ number; add `L` for a 64-bit integer.
 
 **DUPNAME, duplicate setting** *name*
 *Explanation:* A group holds two settings of one name (with CFG$M_NOCASE - of one name in any
-case). *User Action:* Remove one of them.
+case). With CFG$M_DUPWARN it is a warning ending "- the first one is taken": the first one
+stands; the second is read all the same (a syntax error in it is an error, what it
+includes is read) and kept only for the write-back - CFG$DELETE of the first takes it
+with it. *User Action:* Remove one of them.
 
 **EXISTS, a setting of that name exists already**
 *Explanation:* CFG$ADD of a name the group has. *User Action:* Use CFG$SET_* to change it,
@@ -1967,8 +1970,9 @@ The messages of CFGTOOL:
 group above it.
 
 **SKIPPED,** *n* **bad settings skipped**
-*Explanation:* A success with CFG$M_SKIPERRS (CFGTOOL /SKIPERRORS): the settings named by the
-messages before it were skipped, the rest of the file was taken. *User Action:* Correct them.
+*Explanation:* A success with CFG$M_SKIPERRS (CFGTOOL /SKIPERRORS) or CFG$M_DUPWARN: the settings
+named by the messages before it - bad ones, or the seconds of settings written twice - were
+skipped, the rest of the file was taken. *User Action:* Correct them.
 
 **ARGLONG, argument** *n* **is longer than 255 octets**
 *Explanation:* An argument of the command line is too long to be taken whole. *User Action:*

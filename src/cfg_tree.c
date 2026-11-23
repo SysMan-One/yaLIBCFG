@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_TREE"
-#define	__IDENT__	"X.01-04"
-#define	__REV__		"1.4.0"
+#define	__IDENT__	"X.01-05"
+#define	__REV__		"1.5.0"
 #define	__FAC__		"CFG"
 
 /*
@@ -40,6 +40,9 @@
 **	X.01-04		23-NOV-2026	RRL
 **		GET of a value CFG$VALIDATE found bad in a CFG$M_FALLBACK setting: CFG$_FALLBACK, the
 **		value given when its type fits; SET of a value of its type makes it good.
+**
+**	X.01-05		23-NOV-2026	RRL
+**		DELETE of a setting takes the seconds of it (CFG$M_DUPWARN) with it.
 **
 **--
 */
@@ -1301,6 +1304,16 @@ CFG$NODE	*l_p;
 
 	l_p->count--;
 	cfg$$dirty(l_p);
+
+	/*
+	** The seconds of a setting written twice (CFG$M_DUPWARN) go with the first: kept for the
+	** write-back, they would come back to life at the next read of the file written.
+	*/
+	if ( a_node->name )
+		for ( CFG$NODE *l_j = l_p->child; l_j; l_j = l_j->next )
+			if ( (l_j->type == CFG$K_TYPE_JUNK) && (l_j->flags & CFG$M_DUPJUNK) && !(l_j->flags & CFG$M_DELETED)
+				&& !cfg$$namecmp(l_p->tree, l_j->name, l_j->namelen, a_node->name, a_node->namelen) )
+				l_j->flags |= CFG$M_DELETED;
 
 	if ( a_node->flags & CFG$M_NEW )
 		{

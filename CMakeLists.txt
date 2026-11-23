@@ -21,6 +21,7 @@
 #		22-NOV-2026	RRL	X.01-03ECO03 : SET of a text keeps the old form and width of an integer.
 #		23-NOV-2026	RRL	X.01-04 : CFG$M_FALLBACK - a bad value is a warning, the program takes its default;
 #					CFG$DIAGCOUNT.
+#		23-NOV-2026	RRL	X.01-05 : CFG$M_DUPWARN - a setting written twice is a warning, the first stands.
 #
 #---
 cmake_minimum_required(VERSION 3.16)

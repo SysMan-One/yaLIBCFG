@@ -49,6 +49,9 @@
 **	X.01-04		23-NOV-2026	RRL
 **		CFG$M_FALLEN; the count of the errors not kept.
 **
+**	X.01-05		23-NOV-2026	RRL
+**		CFG$M_DUPJUNK, CFG$PARSE.INDUP (CFG_PARSE.C).
+**
 **--
 */
 
@@ -71,6 +74,8 @@
 #define	CFG$M_OPENJUNK		0x40			/* a JUNK that runs to the end of its file with	*/
 							/* a bracket, a string or a comment open: new	*/
 							/* settings are written before it, not after	*/
+#define	CFG$M_DUPJUNK		0x20			/* a JUNK that is the second of a setting written	*/
+							/* twice (CFG$M_DUPWARN); it keeps its name		*/
 #define	CFG$M_FALLEN		0x80			/* CFG$VALIDATE: a bad value of a CFG$M_FALLBACK	*/
 							/* setting - CFG$GET_* gives CFG$_FALLBACK	*/
 

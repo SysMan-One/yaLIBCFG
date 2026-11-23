@@ -304,5 +304,87 @@ int	main (void)
 		cfg$free(x); cfg$free(y);
 	}
 
+	/* CFG$M_DUPWARN: a setting written twice is a warning, the first one stands, the text stays whole */
+	{
+		const char	*txt = "a = 1;\nsrv = { port = 53; port = 54; x = \"y\"; };\na = 2;\ng = { k = 1; };\ng = { k = 2; z = ( 1, 2 ); };\nb = 3;\n";
+		unsigned	sts = cfg$parse_buf(txt, (uint32_t) strlen(txt), "<dup>", CFG$M_DUPWARN, &t);
+		uint32_t	ne = 9, nw = 9, skipped = 0;
+		int32_t		v = 0;
+		char		*o;
+		uint32_t	ol;
+
+		cfg$errcount(t, NULL, &skipped);
+		CHECK(sts == CFG$_SKIPPED, "dupwarn: SKIPPED, %08X", sts);
+		CHECK(skipped == 3, "dupwarn: 3 skipped, %u", skipped);
+		CHECK((cfg$diagcount(t, &ne, &nw) & 1) && !ne && (nw == 3), "dupwarn: %u errors, %u warnings", ne, nw);
+		CHECK((t->nerr == 3) && ($SEV(t->err[0].sts) == STS$K_WARN) && strstr(t->err[0].text, "port - the first one is taken") && (t->err[0].line == 2),
+			"dupwarn: %.*s line %u", (int) t->err[0].len, t->err[0].text, t->err[0].line);
+		cfg$root(t, &r);
+		CHECK((cfg$get_int(r, "a", &v) & 1) && (v == 1), "dupwarn: a = 1, %d", v);
+		CHECK((cfg$get_int(r, "srv.port", &v) & 1) && (v == 53), "dupwarn: srv.port = 53, %d", v);
+		CHECK((cfg$get_int(r, "g.k", &v) & 1) && (v == 1), "dupwarn: g.k = 1, %d", v);
+		CHECK(!(1 & cfg$lookup(r, "g.z", &r)) , "dupwarn: g.z of the second g is not there");
+		cfg$root(t, &r);
+		CHECK((cfg$get_int(r, "b", &v) & 1) && (v == 3), "dupwarn: b = 3 after them, %d", v);
+		CHECK((cfg$write_buf(t, 0, &o, &ol) & 1) && (ol == strlen(txt)) && !memcmp(o, txt, ol), "dupwarn: the text back byte for byte");
+		free(o);
+		cfg$free(t);
+
+		/* Without the option a duplicate is still an error */
+		sts = cfg$parse_buf(txt, (uint32_t) strlen(txt), "<dup>", 0, &t);
+		CHECK(sts == CFG$_DUPNAME, "no dupwarn: DUPNAME, %08X", sts);
+		cfg$free(t);
+
+		/* With it, a real error is still an error */
+		sts = cfg$parse_buf("a = 1;\na = 2;\nb = ;\n", 20, "<dup>", CFG$M_DUPWARN, &t);
+		CHECK(sts == CFG$_SYNTAX, "dupwarn + syntax: SYNTAX, %08X", sts);
+		cfg$free(t);
+	}
+
+	/* CFG$M_DUPWARN: DELETE of the first takes the second with it - it does not come back at the next read */
+	{
+		const char	*txt = "a = 1;\nb = 5;\na = 2;\n";
+		CFG$NODE	*n;
+		char		*o;
+		uint32_t	ol;
+		int32_t		v = 0;
+
+		cfg$parse_buf(txt, (uint32_t) strlen(txt), "<dup>", CFG$M_DUPWARN, &t);
+		cfg$root(t, &r);
+		CHECK((cfg$lookup(r, "a", &n) & 1) && (cfg$delete(n) & 1), "dupwarn delete: a deleted");
+		CHECK((cfg$write_buf(t, 0, &o, &ol) & 1) && !strstr(o, "a ="), "dupwarn delete: no a left in the text: %.*s", (int) ol, o);
+		free(o);
+		CHECK(cfg$set_int(r, "a", 7) & 1, "dupwarn delete: a set anew");
+		CHECK(cfg$write_buf(t, 0, &o, &ol) & 1, "dupwarn delete: written");
+		cfg$free(t);
+		cfg$parse_buf(o, ol, "<dup2>", CFG$M_DUPWARN, &t);
+		cfg$root(t, &r);
+		CHECK((cfg$get_int(r, "a", &v) & 1) && (v == 7), "dupwarn delete: the new a is the one read back, %d", v);
+		free(o);
+		cfg$free(t);
+	}
+
+	/* CFG$M_DUPWARN: a duplicate group including the same file as the first - and a later one too */
+	{
+		FILE		*f = fopen("/tmp/t_skip_inc.cfg", "w");
+		const char	*txt = "g = { @include \"/tmp/t_skip_inc.cfg\" };\ng = { @include \"/tmp/t_skip_inc.cfg\" };\nh = { @include \"/tmp/t_skip_inc.cfg\" };\n";
+		unsigned	sts;
+		int32_t		v = 0;
+
+		fputs("k = 3;\n", f);
+		fclose(f);
+		sts = cfg$parse_buf(txt, (uint32_t) strlen(txt), "<inc>", CFG$M_DUPWARN, &t);
+		CHECK(sts == CFG$_INCTWICE, "dupwarn include: h includes the file of g a second time - INCTWICE, %08X", sts);
+		cfg$free(t);
+
+		txt = "g = { @include \"/tmp/t_skip_inc.cfg\" };\ng = { @include \"/tmp/t_skip_inc.cfg\" };\n";
+		sts = cfg$parse_buf(txt, (uint32_t) strlen(txt), "<inc>", CFG$M_DUPWARN, &t);
+		CHECK(sts == CFG$_SKIPPED, "dupwarn include: the second g may include it again, %08X", sts);
+		cfg$root(t, &r);
+		CHECK((cfg$get_int(r, "g.k", &v) & 1) && (v == 3), "dupwarn include: g.k = 3, %d", v);
+		cfg$free(t);
+		unlink("/tmp/t_skip_inc.cfg");
+	}
+
 	return t_report("t_skip");
 }
