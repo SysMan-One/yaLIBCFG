@@ -22,6 +22,12 @@ static unsigned	even_check (CFG$NODE *n, void *arg, char *msg, uint32_t msgsz, u
 	return STS$K_SUCCESS;
 }
 
+static unsigned	fatal_check (CFG$NODE *n, void *arg, char *msg, uint32_t msgsz, uint32_t *msglen)
+{
+	*msglen = (uint32_t) snprintf(msg, msgsz, "never");
+	return (CFG$_CHECK & ~0x7U) | STS$K_FATAL;
+}
+
 static const CFG$SCHEMA	port_s[] = {
 	{ .name = "id",      .type = CFG$K_TYPE_INT,  .flags = CFG$M_KEY | CFG$M_RANGE, .min = 1, .max = 64 },
 	{ .name = "speed",   .type = CFG$K_TYPE_KWD,  .kwd = speeds },
@@ -345,6 +351,165 @@ int	main (void)
 		cfg$parse_buf("l = ( { id = 2; }, { id = 2; } );", 33, "k", 0, &t);
 		CHECK(cfg$validate(t, kl, &calls, NULL) == CFG$_INVALID, "dupkey");
 		CHECK(calls == 1, "check called %d times, want 1", calls);
+		cfg$free(t);
+	}
+
+	/* CFG$M_FALLBACK: a bad value is a warning, GET gives CFG$_FALLBACK, the rest is checked as before */
+	{
+		static const CFG$KEYWORD	par[] = { { "none", 0 }, { "even", 2 }, { NULL, 0 } };
+		static const CFG$SCHEMA	fs[] = {
+			{ .name = "speed",  .type = CFG$K_TYPE_INT, .flags = CFG$M_FALLBACK | CFG$M_RANGE, .min = 300, .max = 4000000 },
+			{ .name = "parity", .type = CFG$K_TYPE_KWD, .flags = CFG$M_FALLBACK, .kwd = par },
+			{ .name = "tmo",    .type = CFG$K_TYPE_INT, .flags = CFG$M_FALLBACK, .check = even_check },
+			{ .name = "addr",   .type = CFG$K_TYPE_IPV4, .flags = CFG$M_FALLBACK },
+			{ .name = "port",   .type = CFG$K_TYPE_INT, .flags = CFG$M_RANGE, .min = 1, .max = 65535 },
+			{ .name = NULL } };
+		static const CFG$SCHEMA	fr[] = { { .name = "s", .type = CFG$K_TYPE_GROUP, .sub = fs }, { .name = NULL } };
+		const char	*good = "s = { speed = 9600; parity = \"even\"; tmo = 4; addr = \"10.0.0.1\"; port = 502; };";
+		const char	*soft = "s = { speed = 12; parity = \"odd\"; tmo = 3; addr = \"fast\"; port = 502; };";
+		const char	*vtyp = "s = { speed = \"fast\"; };";
+		const char	*hard = "s = { speed = 12; port = 0; };";
+		CFG$TREE	*t;
+		CFG$NODE	*r;
+		int32_t		v = -1;
+		const char	*str;
+		uint32_t	len, ne = 9, nw = 9, nd = 0;
+		int		calls = 0;
+
+		V(soft, fr, 0, STS$K_SUCCESS,
+		  "RANGE 1:7 s.speed = 12, allowed 300..4000000 - the default is taken\n"
+		  "BADKWD 1:19 s.parity = \"odd\", allowed: none, even - the default is taken\n"
+		  "CHECK 1:35 s.tmo: must be even - the default is taken\n"
+		  "BADADDR 1:44 s.addr = \"fast\" is not an IPv4 address - the default is taken\n");
+
+		/* The status of each: warnings; GET: CFG$_FALLBACK for the bad ones, the good one read */
+		cfg$parse_buf(soft, (uint32_t) strlen(soft), "f", 0, &t);
+		cfg$root(t, &r);
+		CHECK(cfg$validate(t, fr, &calls, &nd) == STS$K_SUCCESS, "soft: success");
+		CHECK(nd == 4, "soft: 4 diagnostics, %u", nd);
+		CHECK((cfg$diagcount(t, &ne, &nw) & 1) && !ne && (nw == 4), "diagcount soft: %u errors, %u warnings", ne, nw);
+		for ( uint32_t i = 0; i < t->nerr; i++ )
+			CHECK($SEV(t->err[i].sts) == STS$K_WARN, "soft: diagnostic %u is a warning, %08X", i, t->err[i].sts);
+		CHECK(cfg$get_int(r, "s.speed", &v) == CFG$_FALLBACK, "get speed: FALLBACK");
+		CHECK(v == 12, "get speed: the value is given all the same, %d", v);
+		CHECK((cfg$get_string(r, "s.parity", &str, &len) == CFG$_FALLBACK) && (len == 3) && !memcmp(str, "odd", 3), "get parity: FALLBACK, \"odd\"");
+		CHECK(cfg$get_bool(r, "s.speed", &calls) == CFG$_FALLBACK, "get speed as a boolean: FALLBACK, not TYPE");
+		CHECK(cfg$get_int(r, "s.tmo", &v) == CFG$_FALLBACK, "get tmo: FALLBACK");
+		CHECK(cfg$get_string(r, "s.addr", &str, &len) == CFG$_FALLBACK, "get addr: FALLBACK");
+		CHECK((cfg$get_int(r, "s.port", &v) & 1) && (v == 502), "get port: 502");
+
+		/* A value the program sets is good again; a validation of a mended tree forgets the marks */
+		OK(cfg$set_int(r, "s.speed", 19200));
+		CHECK((cfg$get_int(r, "s.speed", &v) & 1) && (v == 19200), "set speed: read back");
+		OK(cfg$set_string(r, "s.parity", "even", 4));
+		OK(cfg$set_int(r, "s.tmo", 6));
+		OK(cfg$set_string(r, "s.addr", "10.1.1.1", 8));
+		CHECK(cfg$get_string(r, "s.addr", &str, &len) & 1, "set addr: read back");
+		CHECK((cfg$validate(t, fr, &calls, &nd) & 1) && !nd, "mended: no diagnostics, %u", nd);
+		cfg$free(t);
+
+		/* A type of another kind: the same, and it stays marked till a validation finds it good */
+		cfg$parse_buf(vtyp, (uint32_t) strlen(vtyp), "f", 0, &t);
+		cfg$root(t, &r);
+		CHECK(cfg$validate(t, fr, NULL, NULL) == STS$K_SUCCESS, "vtype: success");
+		CHECK((t->nerr == 1) && strstr(t->err[0].text, "an integer expected, found a string - the default is taken"), "%.*s", (int) t->err[0].len, t->err[0].text);
+		v = -1;
+		CHECK((cfg$get_int(r, "s.speed", &v) == CFG$_FALLBACK) && (v == -1), "vtype get: FALLBACK, no value");
+		cfg$free(t);
+
+		/* A setting without the flag is still an error, the soft one beside it still a warning */
+		V(hard, fr, 0, CFG$_INVALID,
+		  "RANGE 1:7 s.speed = 12, allowed 300..4000000 - the default is taken\n"
+		  "RANGE 1:19 s.port = 0, allowed 1..65535\n");
+		cfg$parse_buf(hard, (uint32_t) strlen(hard), "f", 0, &t);
+		cfg$validate(t, fr, NULL, NULL);
+		CHECK((cfg$diagcount(t, &ne, &nw) & 1) && (ne == 1) && (nw == 1), "diagcount hard: %u errors, %u warnings", ne, nw);
+		cfg$free(t);
+
+		/* All good: nothing told, nothing marked */
+		V(good, fr, 0, STS$K_SUCCESS, "");
+
+		/* The flag is for a scalar, not for the key of an element; a required setting may have it */
+		{
+			static const CFG$SCHEMA	b1[] = { { .name = "g", .type = CFG$K_TYPE_GROUP, .flags = CFG$M_FALLBACK, .sub = fs }, { .name = NULL } };
+			static const CFG$SCHEMA	k2[] = { { .name = "id", .type = CFG$K_TYPE_INT, .flags = CFG$M_FALLBACK | CFG$M_KEY }, { .name = NULL } };
+			static const CFG$SCHEMA	ke2 = { .type = CFG$K_TYPE_GROUP, .sub = k2 };
+			static const CFG$SCHEMA	b2[] = { { .name = "l", .type = CFG$K_TYPE_LIST, .sub = &ke2 }, { .name = NULL } };
+			static const CFG$SCHEMA	rq[] = { { .name = "x", .type = CFG$K_TYPE_INT, .flags = CFG$M_FALLBACK | CFG$M_REQUIRED | CFG$M_RANGE, .min = 1, .max = 9 }, { .name = NULL } };
+
+			cfg$parse_buf(good, (uint32_t) strlen(good), "f", 0, &t);
+			CHECK(cfg$validate(t, b1, NULL, NULL) == CFG$_BADSCHEMA, "FALLBACK on a group: BADSCHEMA");
+			CHECK(cfg$validate(t, b2, NULL, NULL) == CFG$_BADSCHEMA, "FALLBACK on a key: BADSCHEMA");
+			cfg$free(t);
+
+			V("x = 0;", rq, 0, STS$K_SUCCESS, "RANGE 1:1 x = 0, allowed 1..9 - the default is taken\n");
+			V("y = 1;", rq, 0, CFG$_INVALID, "UNKNOWN 1:1 y\nREQUIRED 1:1 x\n");
+		}
+	}
+
+	/* A long text of a CFG$M_FALLBACK setting is cut so that its end - what comes of it - stays */
+	{
+		static const CFG$KEYWORD	lk[] = { { "alpha-alpha-alpha-alpha", 1 }, { "bravo-bravo-bravo-bravo", 2 }, { "charlie-charlie-charlie", 3 },
+						 { "delta-delta-delta-delta", 4 }, { "echo-echo-echo-echo-echo", 5 }, { "foxtrot-foxtrot-foxtrot", 6 }, { NULL, 0 } };
+		static const CFG$SCHEMA	ls[] = { { .name = "k", .type = CFG$K_TYPE_KWD, .flags = CFG$M_FALLBACK, .kwd = lk }, { .name = NULL } };
+		static const char	sfx[] = "... - the default is taken";
+		CFG$TREE	*t;
+
+		cfg$parse_buf("k = \"zulu\";", 11, "c", 0, &t);
+		CHECK(cfg$validate(t, ls, NULL, NULL) == STS$K_SUCCESS, "long soft: success");
+		CHECK((t->nerr == 1) && (t->err[0].len == 160) && !memcmp(t->err[0].text + 160 - (sizeof(sfx) - 1), sfx, sizeof(sfx) - 1),
+			"long soft: %u %.*s", t->err[0].len, (int) t->err[0].len, t->err[0].text);
+		cfg$free(t);
+	}
+
+	/* A full record of warnings: an error still gets in, in the place of the last warning */
+	{
+		static const CFG$SCHEMA	ws[] = { { .name = "*", .type = CFG$K_TYPE_INT, .flags = CFG$M_FALLBACK | CFG$M_RANGE, .min = 0, .max = 1 }, { .name = NULL } };
+		static const CFG$SCHEMA	wr[] = { { .name = "g", .type = CFG$K_TYPE_GROUP, .sub = ws }, { .name = "e", .type = CFG$K_TYPE_BOOL }, { .name = NULL } };
+		char		txt[2048];
+		size_t		l = 0;
+		uint32_t	ne = 0, nw = 0;
+		CFG$TREE	*t;
+
+		l += (size_t) snprintf(txt + l, sizeof(txt) - l, "g = { ");
+		for ( int k = 0; k < 37; k++ )
+			l += (size_t) snprintf(txt + l, sizeof(txt) - l, "s%d = 5; ", k);
+		l += (size_t) snprintf(txt + l, sizeof(txt) - l, "};\ne = 1;\n");
+		cfg$parse_buf(txt, (uint32_t) l, "w", 0, &t);
+		CHECK(cfg$validate(t, wr, NULL, NULL) == CFG$_INVALID, "full: INVALID");
+		CHECK((t->nerr == CFG$K_MAXERRS) && ($SEV(t->err[CFG$K_MAXERRS - 1].sts) == STS$K_ERROR), "full: the error is kept last");
+		CHECK((cfg$diagcount(t, &ne, &nw) & 1) && (ne == 1) && (nw == 37) && (t->ndropped == 6), "full: %u errors, %u warnings, %u dropped", ne, nw, t->ndropped);
+		cfg$free(t);
+	}
+
+	/* The cut of a long soft text does not split a UTF-8 character */
+	{
+		static const CFG$SCHEMA	us[] = { { .name = "u", .type = CFG$K_TYPE_STRING, .flags = CFG$M_FALLBACK | CFG$M_LENGTH, .min = 0, .max = 4 }, { .name = NULL } };
+		char		txt[512];
+		size_t		l = 0;
+		CFG$TREE	*t;
+
+		l += (size_t) snprintf(txt + l, sizeof(txt) - l, "u = \"");
+		for ( int k = 0; k < 90; k++ )
+			l += (size_t) snprintf(txt + l, sizeof(txt) - l, "\xD0\x96");		/* Zhe, two octets */
+		l += (size_t) snprintf(txt + l, sizeof(txt) - l, "\";");
+		cfg$parse_buf(txt, (uint32_t) l, "u", 0, &t);
+		CHECK(cfg$validate(t, us, NULL, NULL) == STS$K_SUCCESS, "utf8: success");
+		{
+			const char	*e = strstr(t->err[0].text, "...");
+			CHECK(e && ((uint8_t) e[-1] == 0x96), "utf8: the cut is after a whole character");
+		}
+		cfg$free(t);
+	}
+
+	/* A FATAL status of a check routine refuses even a CFG$M_FALLBACK setting */
+	{
+		static const CFG$SCHEMA	fs[] = { { .name = "x", .type = CFG$K_TYPE_INT, .flags = CFG$M_FALLBACK, .check = fatal_check }, { .name = NULL } };
+		CFG$TREE	*t;
+
+		cfg$parse_buf("x = 1;", 6, "f", 0, &t);
+		CHECK(cfg$validate(t, fs, NULL, NULL) == CFG$_INVALID, "fatal check: INVALID");
+		CHECK((t->nerr == 1) && !strstr(t->err[0].text, "default"), "%.*s", (int) t->err[0].len, t->err[0].text);
 		cfg$free(t);
 	}
 

@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_MSG"
-#define	__IDENT__	"X.01-02"
-#define	__REV__		"1.2.0"
+#define	__IDENT__	"X.01-04"
+#define	__REV__		"1.4.0"
 #define	__FAC__		"CFG"
 
 /*
@@ -28,6 +28,10 @@
 **
 **	X.01-02		22-NOV-2026	RRL
 **		CFG$_SKIPPED; diagnostics muted during a skip; CFG$ERRCOUNT.
+**
+**	X.01-04		23-NOV-2026	RRL
+**		CFG$_FALLBACK; CFG$DIAGCOUNT - the errors apart from the warnings; a full record gives
+**		the place of its last warning to an error (S_SLOT).
 **
 **--
 */
@@ -92,7 +96,8 @@ static	EMSG_RECORD	s_msgtab [] = {
 	$CFGREC(CFG$_OPENOUT,	"OPENOUT, cannot create !AZ, errno=!SL"),
 	$CFGREC(CFG$_INCMODIFIED, "INCMODIFIED, a change in an included file cannot go into another file"),
 	$CFGREC(CFG$_ARGLONG,	"ARGLONG, argument !UL is longer than !UL octets"),
-	$CFGREC(CFG$_SKIPPED,	"SKIPPED, !UL bad setting!%S skipped")
+	$CFGREC(CFG$_SKIPPED,	"SKIPPED, !UL bad setting!%S skipped"),
+	$CFGREC(CFG$_FALLBACK,	"FALLBACK, the value of the setting is not usable, the program takes its default")
 	};
 
 static	EMSG_RECORD_DESC	s_msgdsc = {
@@ -114,6 +119,53 @@ static	EMSG_RECORD_DESC	s_msgdsc = {
 unsigned	cfg$inimsg	(void)
 {
 	return	__util$inimsg(&s_msgdsc);
+}
+
+
+
+/*
+**  DESCRIPTION: The slot of the record for a new diagnostic.  When the record is full, an error
+**		takes the place of the last warning kept (the warning is counted as dropped): the
+**		warnings of CFG$M_FALLBACK settings must not hide the error that refuses a file.
+**
+**  RETURNS:
+**	the slot, zeroed; NULL - nothing is kept (counted)
+*/
+static CFG$ERR *	s_slot	(
+		CFG$TREE	*a_tree,
+		unsigned	a_sts
+			)
+{
+CFG$ERR	*l_err;
+int	l_iserr = ($SEV(a_sts) == STS$K_ERROR) || ($SEV(a_sts) == STS$K_FATAL);
+
+	if ( a_tree->nerr >= CFG$K_MAXERRS )
+		{
+		int	l_w = -1;
+
+		for ( int i = (int) a_tree->nerr - 1; l_iserr && (i >= 0) && (l_w < 0); i-- )
+			if ( ($SEV(a_tree->err[i].sts) != STS$K_ERROR) && ($SEV(a_tree->err[i].sts) != STS$K_FATAL) )
+				l_w = i;
+
+		a_tree->ndropped++;
+
+		if ( l_w < 0 )
+			{
+			if ( l_iserr )
+				a_tree->ndroperrs++;
+
+			return	NULL;
+			}
+
+		/* The warning goes, the rest keeps its order, the error comes last */
+		memmove(&a_tree->err[l_w], &a_tree->err[l_w + 1], (a_tree->nerr - (uint32_t) l_w - 1) * sizeof(CFG$ERR));
+		a_tree->nerr--;
+		}
+
+	l_err = &a_tree->err[a_tree->nerr++];
+	memset(l_err, 0, sizeof(CFG$ERR));
+
+	return	l_err;
 }
 
 
@@ -151,14 +203,8 @@ CFG$ERR	*l_err;
 	if ( !a_tree || a_tree->mute )
 		return	a_sts;
 
-	if ( a_tree->nerr >= CFG$K_MAXERRS )
-		{
-		a_tree->ndropped++;
+	if ( !(l_err = s_slot(a_tree, a_sts)) )
 		return	a_sts;
-		}
-
-	l_err = &a_tree->err[a_tree->nerr++];
-	memset(l_err, 0, sizeof(CFG$ERR));
 
 	l_err->sts = a_sts;
 	l_err->srcno = (uint16_t) a_srcno;
@@ -195,14 +241,8 @@ unsigned	cfg$$syserr	(
 CFG$ERR	*l_err;
 size_t	l_len = strnlen(a_what, sizeof(l_err->text));
 
-	if ( a_tree->nerr >= CFG$K_MAXERRS )
-		{
-		a_tree->ndropped++;
+	if ( !(l_err = s_slot(a_tree, a_sts)) )
 		return	a_sts;
-		}
-
-	l_err = &a_tree->err[a_tree->nerr++];
-	memset(l_err, 0, sizeof(CFG$ERR));
 
 	l_err->sts = a_sts;
 	l_err->err = a_err;
@@ -281,6 +321,45 @@ unsigned	cfg$errcount	(
 
 	if ( a_skipped )
 		*a_skipped = a_tree->nskipped;
+
+	return	STS$K_SUCCESS;
+}
+
+
+
+
+/*
+**  DESCRIPTION: How many of the diagnostics of the tree are errors and how many are warnings or
+**		less - a validation with CFG$M_FALLBACK settings may have both, and only the
+**		errors refuse the file.
+**
+**  OUTPUTS:
+**	a_errors:	of severity ERROR or worse, those not kept past CFG$K_MAXERRS too; may be NULL
+**	a_warnings:	the others; may be NULL
+**
+**  RETURNS:
+**	STS$K_SUCCESS, CFG$_BADARG
+*/
+unsigned	cfg$diagcount	(
+		CFG$TREE	*a_tree,
+		uint32_t	*a_errors,
+		uint32_t	*a_warnings
+			)
+{
+uint32_t	l_errs = 0;
+
+	if ( !a_tree )
+		return	CFG$_BADARG;
+
+	for ( uint32_t i = 0; i < a_tree->nerr; i++ )
+		if ( ($SEV(a_tree->err[i].sts) == STS$K_ERROR) || ($SEV(a_tree->err[i].sts) == STS$K_FATAL) )
+			l_errs++;
+
+	if ( a_errors )
+		*a_errors = l_errs + a_tree->ndroperrs;
+
+	if ( a_warnings )
+		*a_warnings = (a_tree->nerr - l_errs) + (a_tree->ndropped - a_tree->ndroperrs);
 
 	return	STS$K_SUCCESS;
 }

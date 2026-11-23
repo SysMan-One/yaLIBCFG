@@ -19,6 +19,8 @@
 #		22-NOV-2026	RRL	X.01-03ECO01 : CFGTOOL tells the IDENT of the head module.
 #		22-NOV-2026	RRL	X.01-03ECO02 : CFGTOOL help: the comments and the integers of a file.
 #		22-NOV-2026	RRL	X.01-03ECO03 : SET of a text keeps the old form and width of an integer.
+#		23-NOV-2026	RRL	X.01-04 : CFG$M_FALLBACK - a bad value is a warning, the program takes its default;
+#					CFG$DIAGCOUNT.
 #
 #---
 cmake_minimum_required(VERSION 3.16)

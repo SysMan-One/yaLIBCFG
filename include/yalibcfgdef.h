@@ -1,7 +1,7 @@
 #ifndef	__YALIBCFGDEF$H__
 #define	__YALIBCFGDEF$H__	1
 
-#define	__YALIBCFGDEF_IDENT__	"X.01-03ECO03"
+#define	__YALIBCFGDEF_IDENT__	"X.01-04"
 
 /*
 **++
@@ -35,6 +35,10 @@
 **
 **	X.01-03ECO03	22-NOV-2026	RRL
 **		CFG$SET_VALUE (CFGTOOL SET): a plain number keeps the old form and width.
+**
+**	X.01-04		23-NOV-2026	RRL
+**		CFG$M_FALLBACK: a bad value of the setting is a warning, the program takes its
+**		default (CFG$_FALLBACK from CFG$GET_*); CFG$DIAGCOUNT.
 **
 **--
 */
@@ -115,6 +119,7 @@ enum	{
 	CFG$K_MSG_INCMODIFIED,			/* A change in an included file, WRITE_FILE	*/
 	CFG$K_MSG_ARGLONG,			/* CFGTOOL: an argument over 255 octets		*/
 	CFG$K_MSG_SKIPPED,			/* CFG$M_SKIPERRS: bad settings were skipped	*/
+	CFG$K_MSG_FALLBACK,			/* CFG$M_FALLBACK: the value is not usable	*/
 	CFG$K_MSG_MAX				/* End-Of-List					*/
 	};
 
@@ -166,6 +171,7 @@ enum	{
 #define	CFG$_INCMODIFIED $CFGSTS(CFG$K_MSG_INCMODIFIED,	STS$K_ERROR)
 #define	CFG$_ARGLONG	$CFGSTS(CFG$K_MSG_ARGLONG,	STS$K_ERROR)
 #define	CFG$_SKIPPED	$CFGSTS(CFG$K_MSG_SKIPPED,	STS$K_INFO)
+#define	CFG$_FALLBACK	$CFGSTS(CFG$K_MSG_FALLBACK,	STS$K_WARN)
 
 /*
 **  Node types
@@ -205,6 +211,8 @@ enum	{
 #define	CFG$M_OPEN		0x0040		/* a group: settings the schema does not name	*/
 						/* are taken without a word			*/
 #define	CFG$M_CASEKWD		0x0080		/* keywords compared with regard to case	*/
+#define	CFG$M_FALLBACK		0x0100		/* a scalar: a bad value is a warning, the	*/
+						/* program takes its default (CFG$_FALLBACK)	*/
 
 /*
 **  Options of the parse (CFG$PARSE_FILE, CFG$PARSE_BUF)

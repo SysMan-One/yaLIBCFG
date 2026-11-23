@@ -40,6 +40,9 @@
 **	X.01-02		22-NOV-2026	RRL
 **		CFG$ERRCOUNT.
 **
+**	X.01-04		23-NOV-2026	RRL
+**		CFG$DIAGCOUNT.
+**
 **--
 */
 
@@ -73,6 +76,7 @@ unsigned	cfg$parse_file	(const char *a_path, uint32_t a_opts, CFG$TREE **a_tree)
 unsigned	cfg$parse_buf	(const char *a_buf, uint32_t a_len, const char *a_name, uint32_t a_opts, CFG$TREE **a_tree);
 unsigned	cfg$puterrs	(CFG$TREE *a_tree);
 unsigned	cfg$errcount	(CFG$TREE *a_tree, uint32_t *a_count, uint32_t *a_skipped);
+unsigned	cfg$diagcount	(CFG$TREE *a_tree, uint32_t *a_errors, uint32_t *a_warnings);
 unsigned	cfg$free	(CFG$TREE *a_tree);
 unsigned	cfg$source	(CFG$TREE *a_tree, uint32_t a_srcno, const char **a_path);
 

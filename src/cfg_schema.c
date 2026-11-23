@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_SCHEMA"
-#define	__IDENT__	"X.01-02"
-#define	__REV__		"1.2.0"
+#define	__IDENT__	"X.01-04"
+#define	__REV__		"1.4.0"
 #define	__FAC__		"CFG"
 
 /*
@@ -39,6 +39,11 @@
 **	X.01-02		22-NOV-2026	RRL
 **		JUNK nodes are not checked.
 **
+**	X.01-04		23-NOV-2026	RRL
+**		CFG$M_FALLBACK: a bad value of the setting is told as a warning ("- the default is
+**		taken"), the node is marked CFG$M_FALLEN, the check routine is not called for it; a
+**		check routine that refuses it with severity FATAL refuses the file.
+**
 **--
 */
 
@@ -65,6 +70,8 @@ typedef	struct cfg_val_t {
 			ndiag;				/* all, kept or not				*/
 	uint32_t	base;				/* NERRORS before the key of an element was	*/
 	int		hasbase;			/* checked (S_SEQ) - see S_NODE			*/
+	int		soft;				/* the node is of a CFG$M_FALLBACK entry: an	*/
+	uint32_t	nsoft;				/* error is a warning; how many of them		*/
 	uint32_t	plen;
 	char		path[CFG$K_MAXPATH + 1];
 } CFG$VAL;
@@ -168,6 +175,30 @@ uint32_t	l_line = a_n->line, l_col = a_n->col;
 
 	if ( a_t )
 		s_add(&l_all, a_t->buf, a_t->len);
+
+	/*
+	** A setting of a CFG$M_FALLBACK entry: not an error but a warning, and the user is told what
+	** comes of it - the end of the text survives the cut to the size of the record.
+	*/
+	if ( a_v->soft && ($SEV(a_sts) == STS$K_ERROR) )
+		{
+		static const char	l_sfx[] = " - the default is taken";
+		const uint32_t		l_max = (uint32_t) sizeof(((CFG$ERR *) 0)->text);
+
+		if ( l_all.len + sizeof(l_sfx) - 1 > l_max )
+			{
+			l_all.len = l_max - (uint32_t) (sizeof(l_sfx) - 1) - 3;
+
+			while ( l_all.len && ((l_all.buf[l_all.len] & 0xC0) == 0x80) )	/* Not in the middle of a UTF-8 character */
+				l_all.len--;
+
+			s_adds(&l_all, "...");
+			}
+
+		s_add(&l_all, l_sfx, (uint32_t) (sizeof(l_sfx) - 1));
+		a_sts = (a_sts & ~0x7U) | STS$K_WARN;
+		a_v->nsoft++;
+		}
 
 	/* The root (or a node the program made) has no position: the beginning of its file */
 	if ( !l_line )
@@ -331,6 +362,10 @@ int	l_keys = 0;
 	if ( (a_e->type == CFG$K_TYPE_KWD) && !a_e->kwd )
 		return	CFG$_BADSCHEMA;
 
+	/* A default stands in for a bad value of a scalar - not for a group, a list or the key of an element */
+	if ( (a_e->flags & CFG$M_FALLBACK) && (!$ISSCALARTYPE(a_e->type) || (a_e->flags & CFG$M_KEY)) )
+		return	CFG$_BADSCHEMA;
+
 	if ( ((a_e->flags & CFG$M_RANGE) || (a_e->flags & CFG$M_LENGTH) || (a_e->flags & CFG$M_COUNT)) && (a_e->min > a_e->max)
 		&& !((a_e->type == CFG$K_TYPE_FLOAT) && (a_e->flags & CFG$M_RANGE)) )
 		return	CFG$_BADSCHEMA;
@@ -485,6 +520,39 @@ static void	s_seq	(CFG$VAL *a_v, CFG$NODE *a_n, const CFG$SCHEMA *a_e);
 
 
 /*
+**  DESCRIPTION: The end of the checks of a node: a bad value of a CFG$M_FALLBACK entry marks the
+**		node (CFG$GET_* gives CFG$_FALLBACK for it, the program takes its default).
+*/
+static void	s_fallen	(
+		CFG$VAL		*a_v,
+		CFG$NODE	*a_n
+			)
+{
+	if ( a_v->nsoft )
+		a_n->flags |= CFG$M_FALLEN;
+
+	a_v->soft = 0;
+	a_v->nsoft = 0;
+}
+
+
+
+/*
+**  DESCRIPTION: Forget what an earlier validation found bad: every node of the tree, below A_N.
+*/
+static void	s_unfall	(
+		CFG$NODE	*a_n
+			)
+{
+	a_n->flags &= ~CFG$M_FALLEN;
+
+	for ( CFG$NODE *l_c = a_n->child; l_c; l_c = l_c->next )	/* As deep as S_NODE goes */
+		s_unfall(l_c);
+}
+
+
+
+/*
 **  DESCRIPTION: Check one node against its entry.
 */
 static void	s_node	(
@@ -502,6 +570,10 @@ unsigned	l_sts;
 	if ( a_e->flags & CFG$M_DEPRECATED )
 		s_diag(a_v, CFG$_DEPRECATED, a_n, NULL);
 
+	/* A scalar of a CFG$M_FALLBACK entry (S_SOUND): its errors are warnings, see S_DIAG */
+	a_v->soft = !!(a_e->flags & CFG$M_FALLBACK);
+	a_v->nsoft = 0;
+
 	if ( !s_typeok(a_n, a_e) )
 		{
 		s_adds(&l_t, ": ");
@@ -509,6 +581,7 @@ unsigned	l_sts;
 		s_adds(&l_t, " expected, found ");
 		s_adds(&l_t, (($ISINTEGER(a_n->type)) && (a_e->type == CFG$K_TYPE_INT)) ? "a 64-bit integer" : s_typename(a_n->type));
 		s_diag(a_v, CFG$_VTYPE, a_n, &l_t);
+		s_fallen(a_v, a_n);
 		return;					/* not looked into				*/
 		}
 
@@ -598,12 +671,20 @@ unsigned	l_sts;
 	else if ( (a_e->type == CFG$K_TYPE_LIST) || (a_e->type == CFG$K_TYPE_ARRAY) )
 		s_seq(a_v, a_n, a_e);
 
-	/* The program's own check, last: it sees a node that passed the rest, its inside too */
-	if ( a_e->check && (a_v->nerrors == l_errs) )
+	/*
+	** The program's own check, last: it sees a node that passed the rest, its inside too - but for the
+	** values of CFG$M_FALLBACK settings found bad, which are warnings: the routine of a group must test
+	** the low bit of what CFG$GET_* gives (CFG$_FALLBACK - take the default, not the value).
+	*/
+	if ( a_e->check && (a_v->nerrors == l_errs) && !a_v->nsoft )
 		{
 		CFG$TEXT	l_m = { .len = 0 };
 
 		l_sts = a_e->check(a_n, a_v->arg, l_m.buf + 2, sizeof(l_m.buf) - 2, &l_mlen);
+
+		/* A FATAL status of the check routine refuses the file even for a CFG$M_FALLBACK entry */
+		if ( $SEV(l_sts) == STS$K_FATAL )
+			a_v->soft = 0;
 
 		if ( !(1 & l_sts) )
 			{
@@ -613,6 +694,8 @@ unsigned	l_sts;
 			s_diag(a_v, CFG$_CHECK, a_n, &l_m);
 			}
 		}
+
+	s_fallen(a_v, a_n);
 }
 
 
@@ -757,10 +840,13 @@ CFG$TEXT	l_t = { .len = 0 };
 **	a_arg:		passed to the check routines of the schema
 **
 **  OUTPUTS:
-**	a_nerr:		number of diagnostics (errors and warnings); may be NULL
+**	a_nerr:		number of diagnostics (errors and warnings); may be NULL - CFG$DIAGCOUNT tells
+**			them apart
 **
 **  RETURNS:
-**	STS$K_SUCCESS	- the tree matches (there may be DEPRECATED warnings);
+**	STS$K_SUCCESS	- the tree matches (there may be DEPRECATED warnings, and bad values of
+**			  CFG$M_FALLBACK settings told as warnings: CFG$GET_* gives CFG$_FALLBACK
+**			  for them, the program takes its default);
 **	CFG$_INVALID	- it does not: the diagnostics are in the tree, for CFG$PUTERRS;
 **	CFG$_BADSCHEMA	- the schema itself is wrong (a programmer's error);
 **	CFG$_BROKEN, CFG$_BADARG
@@ -804,7 +890,9 @@ unsigned	l_sts;
 
 	a_tree->nerr = 0;
 	a_tree->ndropped = 0;
+	a_tree->ndroperrs = 0;
 
+	s_unfall(a_tree->root);
 	s_group(l_v, a_tree->root, &l_root);
 
 	if ( a_nerr )

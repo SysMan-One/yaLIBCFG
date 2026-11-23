@@ -2,7 +2,7 @@
 
 **Configuration Trees in the libconfig Syntax**
 
-Software Version: yaLIBCFG X.01-03ECO03
+Software Version: yaLIBCFG X.01-04
 
 StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
 
@@ -497,6 +497,7 @@ The flags:
 | CFG$M_DEPRECATED | Still taken, with a warning. |
 | CFG$M_OPEN | A group: settings its table does not name are taken without a word. |
 | CFG$M_CASEKWD | Keywords are compared with regard to case. |
+| CFG$M_FALLBACK | A scalar: a bad value is a warning, CFG$GET_* gives CFG$_FALLBACK, the program takes its default (below). |
 
 A setting the table of its group does not name is an error (CFG$_UNKNOWN) - so a typo in a
 file never passes in silence. The name `"*"` in a table stands for any setting the table does
@@ -512,6 +513,32 @@ checks of the node and of what is inside it passed, and says what is wrong in it
 ```c
 typedef unsigned (*cfg_check_t) (CFG$NODE *a_node, void *a_arg, char *a_msg, uint32_t a_msgsz, uint32_t *a_msglen);
 ```
+
+A setting that has a **default in the program** can be marked CFG$M_FALLBACK: then a bad value
+in the file does not refuse the file. The problem is told as before, with its position, but as a
+warning, and the text ends with "- the default is taken":
+
+```
+%CFG-W-RANGE, out of range: serials.[0].speed = 12, allowed 300..4000000 - the default is taken, s.cfg line 3 column 5
+```
+
+CFG$VALIDATE then returns STS$K_SUCCESS, and CFG$GET_* gives CFG$_FALLBACK for that setting (a
+warning: the low bit is clear), so the program takes its default the same way as for a setting
+that is not in the file. The value is given all the same when it is of the type asked for - a
+program may take what is good of a compound string, `chars = "19200, 8, X, 1"`. A value the
+program sets with CFG$SET_* of the type of the node is good again (a value of another type, `speed = "fast"`, is
+mended by CFG$DELETE and CFG$ADD). The flag is for scalars only, and not for the key of
+the elements of a list (CFG$_BADSCHEMA); with CFG$M_REQUIRED the setting must be there, but a bad
+value of it is a warning. A check routine of a group still runs when a
+setting inside it fell back - it must test the low bit of what CFG$GET_* gives, and take the default for
+CFG$_FALLBACK, not the value. The check routine is not called for a value that
+failed already; when it refuses a value of a CFG$M_FALLBACK setting, that is a warning too -
+unless it returns a status of severity FATAL, which refuses the file as always. CFG$DIAGCOUNT
+tells the errors apart from the warnings.
+
+Use it for the settings where running with the default is better than not running at all - a
+speed, a timeout, a size of a buffer - and tell the user what was taken: the default may not be
+what the file meant. Do not use it where no default makes sense - a device, an address.
 
 ---
 
@@ -1020,6 +1047,25 @@ too) and how many bad settings a parse with CFG$M_SKIPERRS skipped. Either outpu
 
 ---
 
+## CFG$DIAGCOUNT - Count the Errors and the Warnings of a Tree
+
+**Format**
+
+```c
+unsigned cfg$diagcount (CFG$TREE *a_tree, uint32_t *a_errors, uint32_t *a_warnings);
+```
+
+**Description**
+
+Tells how many of the diagnostics of the tree are errors (severity ERROR or FATAL) and how many
+are warnings or less, those past CFG$K_MAXERRS that were not kept counted too. A validation with
+CFG$M_FALLBACK settings may leave both: only the errors refuse the file, so a program that tells
+the user "n problems" counts the errors. Either output may be NULL.
+
+**Condition Values Returned** - STS$K_SUCCESS, CFG$_BADARG.
+
+---
+
 ## CFG$FREE - Free a Tree
 
 **Format**
@@ -1180,6 +1226,7 @@ Find the node on the path (as CFG$LOOKUP) and give its value.
 | STS$K_SUCCESS | Done. |
 | CFG$_NOTFOUND, CFG$_BADPATH | As CFG$LOOKUP. |
 | CFG$_TYPE | The node is of another type, or a 64-bit value does not fit CFG$GET_INT. |
+| CFG$_FALLBACK | A warning: CFG$VALIDATE found the value bad, and its entry has CFG$M_FALLBACK - take the default. The value is given all the same if it is of the type asked for. |
 
 ---
 
@@ -1435,12 +1482,13 @@ program.
 
 The validation **does not stop at the first error**. Every problem is recorded in the tree with
 its position and the path of the setting, for CFG$PUTERRS; at most CFG$K_MAXERRS are kept, the
-rest are counted and CFG$PUTERRS says how many were not kept (CFG$_MOREERRS). A node of a wrong
+rest are counted and CFG$PUTERRS says how many were not kept (CFG$_MOREERRS); when the record is full, an
+error takes the place of the last warning kept, so that the warnings never hide why a file is refused. A node of a wrong
 type is reported once, and what is inside it is not looked at.
 
 The schema itself is checked first: a KWD entry without words, a key outside a list element or
 not a scalar, two keys, MIN greater than MAX, a list without the entry for its elements, a
-schema deeper than 64 levels - all are the programmer's mistakes, returned as CFG$_BADSCHEMA
+schema deeper than 64 levels, CFG$M_FALLBACK on a group, a list, an array or a key - all are the programmer's mistakes, returned as CFG$_BADSCHEMA
 before any file is blamed. A schema may refer to itself (a menu whose items are menus): each
 entry is checked once.
 
@@ -1448,7 +1496,7 @@ entry is checked once.
 
 | Value | Meaning |
 |---|---|
-| STS$K_SUCCESS | The tree matches the schema. There may be warnings (DEPRECATED) in the record. |
+| STS$K_SUCCESS | The tree matches the schema. There may be warnings in the record: DEPRECATED, and the bad values of CFG$M_FALLBACK settings. |
 | CFG$_INVALID | It does not: the diagnostics are in the tree. |
 | CFG$_BADSCHEMA | The schema is wrong. |
 | CFG$_BROKEN | The tree comes from a failed parse. |
@@ -1855,6 +1903,11 @@ Correct the table.
 **DEPRECATED, setting no longer in use:** *path*
 *Explanation:* A warning: the setting is still taken, but will go. *User Action:* See the
 documentation of the program for what replaces it.
+
+**FALLBACK, the value of the setting is not usable, the program takes its default**
+*Explanation:* The condition value CFG$GET_* gives for a CFG$M_FALLBACK setting whose value
+CFG$VALIDATE found bad (the warning before it, ending with "- the default is taken", says what is
+wrong). *User Action:* Correct the value, if the default is not what you want.
 
 **DUPKEY, duplicate key:** *path, the same as line n [of file]*
 *Explanation:* Two elements of a list have the same key; the line is that of the first of them

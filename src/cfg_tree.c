@@ -1,6 +1,6 @@
 #define	__MODULE__	"CFG_TREE"
-#define	__IDENT__	"X.01-03ECO03"
-#define	__REV__		"1.3.3"
+#define	__IDENT__	"X.01-04"
+#define	__REV__		"1.4.0"
 #define	__FAC__		"CFG"
 
 /*
@@ -37,6 +37,10 @@
 **		SET of a text: a plain decimal value keeps the old form and width; the same radix
 **		keeps the old width.
 **
+**	X.01-04		23-NOV-2026	RRL
+**		GET of a value CFG$VALIDATE found bad in a CFG$M_FALLBACK setting: CFG$_FALLBACK, the
+**		value given when its type fits; SET of a value of its type makes it good.
+**
 **--
 */
 
@@ -51,6 +55,14 @@
 #define	$ISLIVE(n)	( !((n)->flags & CFG$M_DELETED) && ((n)->type != CFG$K_TYPE_INCLUDE) && ((n)->type != CFG$K_TYPE_JUNK) )
 #define	$ISSCALAR(t)	( ((t) >= CFG$K_TYPE_INT) && ((t) <= CFG$K_TYPE_STRING) )
 #define	$ISINTEGER(t)	( ((t) == CFG$K_TYPE_INT) || ((t) == CFG$K_TYPE_INT64) )
+
+/*
+** CFG$GET_*: a value CFG$VALIDATE found bad in a CFG$M_FALLBACK setting is CFG$_FALLBACK (a warning, the
+** program takes its default) - with the value still given when it is of the type asked for, so that a
+** program may take what is good of it (a part of a compound string).
+*/
+#define	$FALLRET(n)	( ((n)->flags & CFG$M_FALLEN) ? CFG$_FALLBACK : STS$K_SUCCESS )
+#define	$TYPERET(n)	( ((n)->flags & CFG$M_FALLEN) ? CFG$_FALLBACK : CFG$_TYPE )
 
 
 
@@ -650,6 +662,15 @@ unsigned	l_sts;
 
 
 
+/*
+**  DESCRIPTION: Read a value: CFG$GET_INT, _INT64, _FLOAT, _BOOL, _STRING.
+**
+**  RETURNS:
+**	STS$K_SUCCESS, CFG$_NOTFOUND, CFG$_BADPATH, CFG$_TYPE, CFG$_BADARG;
+**	CFG$_FALLBACK	- CFG$VALIDATE found the value bad and its entry has CFG$M_FALLBACK: the
+**			  program takes its default, as for a setting that is not there; the value
+**			  is given all the same when it is of the type asked for
+*/
 unsigned	cfg$get_int	(
 		CFG$NODE	*a_base,
 	const	char		*a_path,
@@ -666,11 +687,11 @@ unsigned	l_sts;
 		return	l_sts;
 
 	if ( !$ISINTEGER(l_n->type) || (l_n->v.i < INT32_MIN) || (l_n->v.i > INT32_MAX) )
-		return	CFG$_TYPE;
+		return	$TYPERET(l_n);
 
 	*a_val = (int32_t) l_n->v.i;
 
-	return	STS$K_SUCCESS;
+	return	$FALLRET(l_n);
 }
 
 
@@ -691,11 +712,11 @@ unsigned	l_sts;
 		return	l_sts;
 
 	if ( !$ISINTEGER(l_n->type) )
-		return	CFG$_TYPE;
+		return	$TYPERET(l_n);
 
 	*a_val = l_n->v.i;
 
-	return	STS$K_SUCCESS;
+	return	$FALLRET(l_n);
 }
 
 
@@ -719,9 +740,9 @@ unsigned	l_sts;
 		*a_val = l_n->v.f;
 	else if ( $ISINTEGER(l_n->type) )
 		*a_val = (double) l_n->v.i;
-	else	return	CFG$_TYPE;
+	else	return	$TYPERET(l_n);
 
-	return	STS$K_SUCCESS;
+	return	$FALLRET(l_n);
 }
 
 
@@ -742,11 +763,11 @@ unsigned	l_sts;
 		return	l_sts;
 
 	if ( l_n->type != CFG$K_TYPE_BOOL )
-		return	CFG$_TYPE;
+		return	$TYPERET(l_n);
 
 	*a_val = l_n->v.b;
 
-	return	STS$K_SUCCESS;
+	return	$FALLRET(l_n);
 }
 
 
@@ -772,12 +793,12 @@ unsigned	l_sts;
 		return	l_sts;
 
 	if ( l_n->type != CFG$K_TYPE_STRING )
-		return	CFG$_TYPE;
+		return	$TYPERET(l_n);
 
 	*a_str = l_n->v.s.ptr;
 	*a_len = l_n->v.s.len;
 
-	return	STS$K_SUCCESS;
+	return	$FALLRET(l_n);
 }
 
 
@@ -938,6 +959,8 @@ static void	s_touch	(
 {
 	if ( !(a_node->flags & CFG$M_NEW) )
 		a_node->flags |= CFG$M_MODIFIED;
+
+	a_node->flags &= ~CFG$M_FALLEN;		/* a value of the program is not the bad one of the file */
 
 	cfg$$dirty(a_node);
 }

@@ -46,6 +46,9 @@
 **	X.01-03ECO01	22-NOV-2026	RRL
 **		NDIG: the width of an integer is kept when it is set.
 **
+**	X.01-04		23-NOV-2026	RRL
+**		CFG$M_FALLEN; the count of the errors not kept.
+**
 **--
 */
 
@@ -68,6 +71,8 @@
 #define	CFG$M_OPENJUNK		0x40			/* a JUNK that runs to the end of its file with	*/
 							/* a bracket, a string or a comment open: new	*/
 							/* settings are written before it, not after	*/
+#define	CFG$M_FALLEN		0x80			/* CFG$VALIDATE: a bad value of a CFG$M_FALLBACK	*/
+							/* setting - CFG$GET_* gives CFG$_FALLBACK	*/
 
 /*
 **  How an integer was written - kept to write a changed value the same way
@@ -162,7 +167,8 @@ struct cfg_tree_t {
 	uint32_t	nsrc;
 	CFG$SRC		*src[CFG$K_MAXSRC];
 	uint32_t	nerr,
-			ndropped;			/* diagnostics past CFG$K_MAXERRS, not kept	*/
+			ndropped,			/* diagnostics past CFG$K_MAXERRS, not kept	*/
+			ndroperrs;			/* of them of severity ERROR or worse		*/
 	CFG$ERR		err[CFG$K_MAXERRS];
 };
 

@@ -8,7 +8,8 @@ What it adds over libconfig:
 
 - **lossless write-back** - comments and layout survive; an unchanged file is written byte for byte;
 - **schema validation** - types, ranges, keywords, required items, keys of lists, with
-  OpenVMS-style condition values that name the file, line and column;
+  OpenVMS-style condition values that name the file, line and column; a setting with a default in
+  the program may take it instead of a bad value, with a warning (CFG$M_FALLBACK);
 - **diff of two trees** - add / modify / delete with paths, lists of groups matched by key, a
   listing in the manner of the OpenVMS DIFFERENCES utility, a UUID fingerprint of a configuration.
 
