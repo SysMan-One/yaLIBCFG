@@ -1,8 +1,46 @@
+#define	__MODULE__	"EX6_SCHEMA"
+#define	__IDENT__	"X.01-01"
+#define	__REV__		"1.1.0"
+
 /*
-**  yaLIBCFG example 6: a schema for router.cfg, and the validation of a file by it.
+**++
 **
-**	$ ex6_schema router.cfg
-**	$ ex6_schema router-bad.cfg
+**  FACILITY:	yaLIBCFG - configuration trees in the libconfig syntax
+**
+**  MODULE:	examples/ex6_schema.c
+**
+**  ABSTRACT:	Example 6 of the manual: a schema and the validation by it.
+**
+**  DESCRIPTION: A schema for router.cfg: types, ranges, keywords, the key of a list, a check
+**		routine; every problem of a file is told with its line and column.
+**
+**		Run it in the directory of the examples:
+**
+**			$ ./ex6_schema router.cfg
+**			$ ./ex6_schema router-bad.cfg
+**
+**  BUILD:	By hand, out of the tree, with yaLIBCFG and StarLet in /opt (cmake --install):
+**
+**		$ cc -Wall -Wextra -o ex6_schema ex6_schema.c \
+**			-I/opt/yalibcfg/include -I/opt/starlet/include \
+**			-L/opt/yalibcfg/lib -L/opt/starlet/lib -lyalibcfg -lstarlet -lpthread -lm
+**
+**		The order of the libraries matters: libyalibcfg.a needs libstarlet.a after it.
+**		Within the tree it is built by CMake with the tests (YALIBCFG_M_EXAMPLES).
+**
+**  AUTHOR:	StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+**
+**  CREATION DATE:  22-NOV-2026
+**
+**  MODIFICATION HISTORY:
+**
+**	X.01-00		22-NOV-2026	RRL
+**		First edition.
+**
+**	X.01-01		23-NOV-2026	RRL
+**		The header of the house; the line to build it by hand.
+**
+**--
 */
 #include <stdio.h>
 #include "yalibcfg.h"

@@ -1,7 +1,45 @@
+#define	__MODULE__	"EX4_LIST"
+#define	__IDENT__	"X.01-01"
+#define	__REV__		"1.1.0"
+
 /*
-**  yaLIBCFG example 4: a list of groups - find by key, add an element, add to an array.
+**++
 **
-**	$ ex4_list router.cfg
+**  FACILITY:	yaLIBCFG - configuration trees in the libconfig syntax
+**
+**  MODULE:	examples/ex4_list.c
+**
+**  ABSTRACT:	Example 4 of the manual: a list of groups.
+**
+**  DESCRIPTION: Finds an element of a list by its key, adds an element to the list and a value to
+**		an array.
+**
+**		Run it in the directory of the examples:
+**
+**			$ ./ex4_list router.cfg
+**
+**  BUILD:	By hand, out of the tree, with yaLIBCFG and StarLet in /opt (cmake --install):
+**
+**		$ cc -Wall -Wextra -o ex4_list ex4_list.c \
+**			-I/opt/yalibcfg/include -I/opt/starlet/include \
+**			-L/opt/yalibcfg/lib -L/opt/starlet/lib -lyalibcfg -lstarlet -lpthread -lm
+**
+**		The order of the libraries matters: libyalibcfg.a needs libstarlet.a after it.
+**		Within the tree it is built by CMake with the tests (YALIBCFG_M_EXAMPLES).
+**
+**  AUTHOR:	StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+**
+**  CREATION DATE:  22-NOV-2026
+**
+**  MODIFICATION HISTORY:
+**
+**	X.01-00		22-NOV-2026	RRL
+**		First edition.
+**
+**	X.01-01		23-NOV-2026	RRL
+**		The header of the house; the line to build it by hand.
+**
+**--
 */
 #include <stdio.h>
 #include <stdlib.h>

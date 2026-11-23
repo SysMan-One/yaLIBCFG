@@ -1,7 +1,45 @@
+#define	__MODULE__	"EX3_WALK"
+#define	__IDENT__	"X.01-01"
+#define	__REV__		"1.1.0"
+
 /*
-**  yaLIBCFG example 3: walk a tree and show every setting with its place in the file.
+**++
 **
-**	$ ex3_walk router.cfg
+**  FACILITY:	yaLIBCFG - configuration trees in the libconfig syntax
+**
+**  MODULE:	examples/ex3_walk.c
+**
+**  ABSTRACT:	Example 3 of the manual: walk a tree.
+**
+**  DESCRIPTION: Goes over every node with CFG$FIRST and CFG$NEXT and shows each setting with its
+**		type and its place in the file (CFG$NODE_INFO).
+**
+**		Run it in the directory of the examples:
+**
+**			$ ./ex3_walk router.cfg
+**
+**  BUILD:	By hand, out of the tree, with yaLIBCFG and StarLet in /opt (cmake --install):
+**
+**		$ cc -Wall -Wextra -o ex3_walk ex3_walk.c \
+**			-I/opt/yalibcfg/include -I/opt/starlet/include \
+**			-L/opt/yalibcfg/lib -L/opt/starlet/lib -lyalibcfg -lstarlet -lpthread -lm
+**
+**		The order of the libraries matters: libyalibcfg.a needs libstarlet.a after it.
+**		Within the tree it is built by CMake with the tests (YALIBCFG_M_EXAMPLES).
+**
+**  AUTHOR:	StarLet Squad and Ruslan R. Laishev (AKA: BadAss SysMan)
+**
+**  CREATION DATE:  22-NOV-2026
+**
+**  MODIFICATION HISTORY:
+**
+**	X.01-00		22-NOV-2026	RRL
+**		First edition.
+**
+**	X.01-01		23-NOV-2026	RRL
+**		The header of the house; the line to build it by hand.
+**
+**--
 */
 #include <stdio.h>
 #include <inttypes.h>
